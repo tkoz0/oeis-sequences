@@ -47,17 +47,27 @@ static inline void loop_mid(uint64_t midlo, uint64_t midhi)
 // Testing all of the few numbers at the endpoints barely affects performance.
 static inline void loop(uint64_t min, uint64_t max)
 {
+    uint64_t n;
+    // mid range fails if there is no number divisible by BASE in the range
+    // if this is the case, the range is small enough that brute force is OK
+    if (max-min < BASE)
+    {
+        for (n = min; n <= max; ++n)
+            if (fermat_pp(n,BASE,mod_mult42))
+                printf("%lu\n",n);
+        return;
+    }
     // Compute [midlo,midhi] range inside [min,max], endpoints divisible by base
     uint64_t midlo = min;
     if (midlo%BASE) midlo += BASE - (midlo%BASE);
     uint64_t midhi = max;
     midhi -= midhi%BASE;
-    uint64_t n;
     // Below midlo, [min,midlo)
     for (n = min; n < midlo; ++n)
         if (fermat_pp(n,BASE,mod_mult42))
             printf("%lu\n",n);
     // Mid range, [midlo,midhi]
+    assert(midlo <= midhi);
     loop_mid(midlo,midhi);
     // Above midhi, (midhi,max]
     for (n = midhi+1; n <= max; ++n)

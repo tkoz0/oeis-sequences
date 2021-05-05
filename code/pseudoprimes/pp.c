@@ -1,7 +1,7 @@
 /*
 
 Program to enumerate probable primes. The numbers are written to stdout in base
-10, 1 per line.
+10, 1 per line. Once the end is reached, it prints a line with "done".
 
 TODO This can be better optimized for inputs larger than 42 bits.
 TODO Base is limited to 32 bits to simplify some of the code for now (since it
@@ -32,6 +32,7 @@ static inline void loop_all(uint64_t min, uint64_t max, uint64_t base,
             printf("%lu\n",min);
         ++min;
     }
+    printf("done\n");
 }
 
 static inline void loop_odd(uint64_t min, uint64_t max, uint64_t base,
@@ -46,6 +47,7 @@ static inline void loop_odd(uint64_t min, uint64_t max, uint64_t base,
             printf("%lu\n",min);
         min += 2;
     }
+    printf("done\n");
 }
 
 void check_inputs(uint64_t min, uint64_t max, uint64_t base)

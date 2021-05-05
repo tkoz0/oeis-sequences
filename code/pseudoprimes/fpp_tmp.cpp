@@ -3,7 +3,8 @@
     efficient code for any base. The base is limited to [2,1023] to keep code
     size reasonable with the template metaprograming. Numbers are written to
     stdout, 1 per line, in base 10. This uses the 42 bit version for modular
-    multiplication, capping to about 4.4 trillion.
+    multiplication, capping to about 4.4 trillion. Once complete, a line
+    containing "done" is written.
 */
 
 #include <stdio.h>
@@ -77,5 +78,6 @@ int main(int argc, char **argv)
     assert(min <= max);
     assert(max <= LIMIT);
     loop(min,max);
+    printf("done\n");
     return 0;
 }

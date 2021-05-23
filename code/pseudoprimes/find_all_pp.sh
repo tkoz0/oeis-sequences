@@ -14,5 +14,6 @@ python3 job_generator.py \
         --tmpdir out_$1 \
         --joblog jobs_$1.log \
         --bar \
+        --resume-failed \
         ./find_pp.sh $1 {lo} {hi} \
-    > parallel_$1.stdout
+    >> parallel_$1.stdout

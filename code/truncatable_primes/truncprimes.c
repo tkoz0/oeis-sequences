@@ -208,46 +208,48 @@ The caller is responsible for writing the value byte(s)
 
 void primes_r()
 {
-    if (_g_depth > _g_maxdepth)
-        return;
-    // left shift to create a 0 digit on the right
-    mpz_mul_ui(_g_value,_g_value,_g_base);
     ++_g_depth;
-    for (uint32_t d = 1; d < _g_base; ++d)
+    if (_g_depth <= _g_maxdepth)
     {
-        // increment right digit
-        mpz_add_ui(_g_value,_g_value,1);
-        if (PRIME_TEST(_g_value))
+        // left shift to create a 0 digit on the right
+        mpz_mul_ui(_g_value,_g_value,_g_base);
+        for (uint32_t d = 1; d < _g_base; ++d)
         {
-            write_byte(d); // subtree
-            primes_r();
+            // increment right digit
+            mpz_add_ui(_g_value,_g_value,1);
+            if (PRIME_TEST(_g_value))
+            {
+                write_byte(d); // subtree
+                primes_r();
+            }
         }
+        // backtrack
+        mpz_div_ui(_g_value,_g_value,_g_base);
     }
-    write_byte(0);
-    // backtrack
-    mpz_div_ui(_g_value,_g_value,_g_base);
     --_g_depth;
+    write_byte(0); // end
 }
 
 void primes_l()
 {
-    if (_g_depth > _g_maxdepth)
-        return;
     ++_g_depth;
-    for (uint32_t d = 1; d < _g_base; ++d)
+    if (_g_depth <= _g_maxdepth)
     {
-        // increment left digit
-        mpz_add(_g_value,_g_value,*get_power(_g_depth-1));
-        if (PRIME_TEST(_g_value))
+        for (uint32_t d = 1; d < _g_base; ++d)
         {
-            write_byte(d); // subtree
-            primes_l();
+            // increment left digit
+            mpz_add(_g_value,_g_value,*get_power(_g_depth-1));
+            if (PRIME_TEST(_g_value))
+            {
+                write_byte(d); // subtree
+                primes_l();
+            }
         }
+        // backtrack
+        mpz_submul_ui(_g_value,*get_power(_g_depth-1),_g_base-1);
     }
-    write_byte(0);
-    // backtrack
-    mpz_submul_ui(_g_value,*get_power(_g_depth-1),_g_base-1);
     --_g_depth;
+    write_byte(0); // end
 }
 
 void primes_lor()
@@ -266,18 +268,18 @@ Recursion setup functions
 
 void primes_r_init(uint64_t root)
 {
+    write_byte(0); // root value
     if (root)
     {
         mpz_set_ui(_g_value,root);
         _g_depth = 0;
-        while (root)
+        while (root) // count digits
             ++_g_depth, root /= _g_base;
-        write_byte(0); // root value
         primes_r();
+        return;
     }
-    else
-    {
-        write_byte(0); // root value
+    // root is 0, initialize with single digit primes
+    if (1 <= _g_maxdepth)
         for (root = 2; root < _g_base; ++root)
         {
             mpz_set_ui(_g_value,root);
@@ -288,24 +290,23 @@ void primes_r_init(uint64_t root)
                 primes_r();
             }
         }
-        write_byte(0); // end
-    }
+    write_byte(0); // end
 }
 
 void primes_l_init(uint64_t root)
 {
+    write_byte(0); // root value
     if (root)
     {
         mpz_set_ui(_g_value,root);
         _g_depth = 0;
-        while (root)
+        while (root) // count digits
             ++_g_depth, root /= _g_base;
-        write_byte(0); // root value
         primes_l();
+        return;
     }
-    else
-    {
-        write_byte(0); // root value
+    // root is 0, initialize with single digit primes
+    if (1 <= _g_maxdepth)
         for (root = 2; root < _g_base; ++root)
         {
             mpz_set_ui(_g_value,root);
@@ -316,8 +317,7 @@ void primes_l_init(uint64_t root)
                 primes_l();
             }
         }
-        write_byte(0); // end
-    }
+    write_byte(0); // end
 }
 
 void primes_lor_init(uint64_t root)
@@ -342,6 +342,12 @@ int main(int argc, char **argv)
     _g_maxdepth = -1;
     char *prime_type = NULL;
     uint64_t root = 0;
+    if (argc < 2)
+    {
+        fprintf(stderr,"truncprimes <-p prime_type> "
+                        "[-b base] [-l max_length] [-r root]\n");
+        return 0;
+    }
     // read options
     int o;
     while ((o = getopt_long(argc,argv,OPTION_STRING,OPTION_LONG,NULL)) != -1)
@@ -399,5 +405,6 @@ int main(int argc, char **argv)
         fprintf(stderr,"unable to write output\n");
         exit(1);
     }
+    clear_globals();
     return 0;
 }

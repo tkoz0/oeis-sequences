@@ -394,6 +394,10 @@ int main(int argc, char **argv)
     else
         fprintf(stderr,"invalid prime type: %s\n",prime_type);
     // flush buffer and exit
-    write(1,_g_buffer,_g_buffer_index);
+    if (write(1,_g_buffer,_g_buffer_index) != _g_buffer_index)
+    {
+        fprintf(stderr,"unable to write output\n");
+        exit(1);
+    }
     return 0;
 }

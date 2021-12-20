@@ -24,8 +24,8 @@ def sprp(n: int, a: int = 2) -> bool:
 # subtrees can be pruned by a proper primality test afterward
 # all primes will be output, but some pseudoprimes may be present
 def prob_prime_test(n: int) -> bool:
-    return n == 2 or (n % 2 == 1 and n > 2 and prp(n))
-    #return n == 2 or (n % 2 == 1 and n > 2 and sprp(n))
+    #return n == 2 or (n % 2 == 1 and n > 2 and prp(n))
+    return n == 2 or (n % 2 == 1 and n > 2 and sprp(n))
 
 # right truncatable primes (A024770)
 # b >= 2 is the base

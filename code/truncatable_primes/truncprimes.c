@@ -24,25 +24,24 @@ Binary format for the recursion tree:
     supported up to base 255
     tree -> value [tree...] end
     value - the branch taken, or zero byte(s) for the root
-        r,l - 1 byte with the digit appended
-        lor - 2 bytes, 1 for append left or 2 for right, followed by the digit
+        r,l - 1 byte with the digit appended (always nonzero)
+        lor - 2 bytes, 0 for append left or 1 for right, followed by the digit
         lar - 2 bytes, the appended digits, left then right
               left digit is 0 for 1 digit roots
     tree... - zero or more trees
-    end - a single 0 byte
+    end - a single 255 byte
     note that this format does not contain the base or root value
-    to avoid conflict with end byte, all values must start with a nonzero byte
-    (only the root value is permitted to start with a 0 byte)
+    the root value is 0 (or 2 zero bytes)
     
     pseudocode showing how to read this format
     next(bytes): extracts next byte from the stream
     peek(bytes): reads next byte from stream without extracting
     read_tree(bytes):
         value <- next(bytes) // or extract 2 bytes if appropriate
-        while(peek(bytes) != 0)
+        while(peek(bytes) != 255)
             read_tree(bytes)
         end <- next(bytes)
-        assert(end == 0)
+        assert(end == 255)
 */
 
 #include <assert.h>
@@ -229,7 +228,7 @@ void primes_r()
         mpz_div_ui(_g_value,_g_value,_g_base);
     }
     --_g_depth;
-    write_byte(0); // end
+    write_byte(255); // end
 }
 
 // left truncatable (A024785 for base 10)
@@ -252,19 +251,78 @@ void primes_l()
         mpz_submul_ui(_g_value,*get_power(_g_depth-1),_g_base-1);
     }
     --_g_depth;
-    write_byte(0); // end
+    write_byte(255); // end
 }
 
 // left or right truncatable (A137812 for base 10)
 void primes_lor()
 {
-    ;
+    ++_g_depth;
+    if (_g_depth <= _g_maxdepth)
+    {
+        // append left
+        for (uint32_t d = 1; d < _g_base; ++d)
+        {
+            mpz_add(_g_value,_g_value,*get_power(_g_depth-1));
+            if (PRIME_TEST(_g_value))
+            {
+                write_byte(0); // subtree
+                write_byte(d);
+                primes_lor();
+            }
+        }
+        // backtrack
+        mpz_submul_ui(_g_value,*get_power(_g_depth-1),_g_base-1);
+        // append right
+        mpz_mul_ui(_g_value,_g_value,_g_base);
+        for (uint32_t d = 1; d < _g_base; ++d)
+        {
+            mpz_add_ui(_g_value,_g_value,1);
+            if (PRIME_TEST(_g_value))
+            {
+                write_byte(1); // subtree
+                write_byte(d);
+                primes_lor();
+            }
+        }
+        // backtrack
+        mpz_div_ui(_g_value,_g_value,_g_base);
+    }
+    --_g_depth;
+    write_byte(255); // end
 }
 
 // left and right truncatable (A077390 for base 10)
 void primes_lar()
 {
-    ;
+    _g_depth += 2;
+    if (_g_depth <= _g_maxdepth)
+    {
+        mpz_mul_ui(_g_value,_g_value,_g_base); // shift left
+        for (uint32_t dl = 1; dl < _g_base; ++dl)
+        {
+            // increment left digit
+            mpz_add(_g_value,_g_value,*get_power(_g_depth-1));
+            // right digit loop
+            for (uint32_t dr = 1; dr < _g_base; ++dr)
+            {
+                mpz_add_ui(_g_value,_g_value,1);
+                if (PRIME_TEST(_g_value))
+                {
+                    write_byte(dl); // subtree
+                    write_byte(dr);
+                    primes_lar();
+                }
+            }
+            // backtrack right digit increment
+            mpz_sub_ui(_g_value,_g_value,_g_base-1);
+        }
+        // backtrack left append, then shift right
+        mpz_submul_ui(_g_value,*get_power(_g_depth-1),_g_base-1);
+        mpz_div_ui(_g_value,_g_value,_g_base);
+    }
+    _g_depth -= 2;
+    write_byte(255); // end
 }
 
 /*
@@ -308,12 +366,13 @@ void primes_init_1digit(void (*fptr)(), int byte2)
 }
 
 // write subtrees beginning with 2 digits (2 bytes for root values)
+// only used for left and right truncatable primes
 void primes_init_2digit(void (*fptr)())
 {
     if (_g_maxdepth < 2)
         return;
     for (uint64_t rootl = 1; rootl < _g_base; ++rootl)
-        for (uint64_t rootr = 1; rootr < _g_base; ++rootr)
+        for (uint64_t rootr = 0; rootr < _g_base; ++rootr)
         {
             mpz_set_ui(_g_value,rootl*_g_base+rootr);
             _g_depth = 2;
@@ -335,7 +394,7 @@ void primes_r_init(uint64_t root)
     {
         write_byte(0); // root value
         primes_init_1digit(primes_r,-1);
-        write_byte(0); // end
+        write_byte(255); // end
     }
 }
 
@@ -348,7 +407,7 @@ void primes_l_init(uint64_t root)
     {
         write_byte(0); // root value
         primes_init_1digit(primes_l,-1);
-        write_byte(0); // end
+        write_byte(255); // end
     }
 }
 
@@ -361,8 +420,8 @@ void primes_lor_init(uint64_t root)
     {
         write_byte(0); // root value
         write_byte(0);
-        primes_init_1digit(primes_lor,1);
-        write_byte(0); // end
+        primes_init_1digit(primes_lor,0);
+        write_byte(255); // end
     }
 }
 
@@ -377,7 +436,7 @@ void primes_lar_init(uint64_t root)
         write_byte(0);
         primes_init_1digit(primes_lar,0);
         primes_init_2digit(primes_lar);
-        write_byte(0); // end
+        write_byte(255); // end
     }
 }
 
@@ -439,17 +498,9 @@ int main(int argc, char **argv)
     else if (strcmp(prime_type,"l") == 0)
         primes_l_init(root);
     else if (strcmp(prime_type,"lor") == 0)
-    {
-        fprintf(stderr,"not implemented\n");
-        exit(0);
         primes_lor_init(root);
-    }
     else if (strcmp(prime_type,"lar") == 0)
-    {
-        fprintf(stderr,"not implemented\n");
-        exit(0);
         primes_lar_init(root);
-    }
     else
         fprintf(stderr,"invalid prime type: %s\n",prime_type);
     // flush buffer and exit

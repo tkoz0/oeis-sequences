@@ -45,6 +45,7 @@ Binary format for the recursion tree:
 */
 
 #include <assert.h>
+#include <ctype.h>
 #include <getopt.h>
 #include <gmp.h>
 #include <stdbool.h>
@@ -122,6 +123,17 @@ static inline mpz_t *get_power(uint32_t p)
         _g_plen = p+1;
     }
     return _g_powers+p;
+}
+
+// checks if a string is a number
+bool is_number(const char *s)
+{
+    if (!isdigit(*s)) // must start with digit
+        return false;
+    ++s;
+    while (isdigit(*s)) // go past last digit
+        ++s;
+    return !(*s); // must be at null terminator
 }
 
 void init_globals()
@@ -465,15 +477,30 @@ int main(int argc, char **argv)
         switch (o)
         {
         case 'b': // base
+            if (!is_number(optarg))
+            {
+                fprintf(stderr,"base must be a number\n");
+                return 0;
+            }
             _g_base = atoi(optarg);
             break;
         case 'l': // max length
+            if (!is_number(optarg))
+            {
+                fprintf(stderr,"max length must be a number\n");
+                return 0;
+            }
             _g_maxdepth = atoi(optarg);
             break;
         case 'p': // prime type
             prime_type = optarg;
             break;
         case 'r': // root
+            if (!is_number(optarg))
+            {
+                fprintf(stderr,"root must be a number\n");
+                return 0;
+            }
             root = atoll(optarg);
             break;
         default:

@@ -1,3 +1,4 @@
+import gmpy2
 import sys
 from typing import Generator
 
@@ -25,7 +26,8 @@ def sprp(n: int, a: int = 2) -> bool:
 # all primes will be output, but some pseudoprimes may be present
 def prob_prime_test(n: int) -> bool:
     #return n == 2 or (n % 2 == 1 and n > 2 and prp(n))
-    return n == 2 or (n % 2 == 1 and n > 2 and sprp(n))
+    #return n == 2 or (n % 2 == 1 and n > 2 and sprp(n))
+    return gmpy2.is_bpsw_prp(n)
 
 # right truncatable primes (A024770)
 # b >= 2 is the base
@@ -74,6 +76,12 @@ def lor_trunc(b: int = 10, d: int = 1, v: int = 0) -> Generator[int,None,None]:
             yield v
             yield from lor_trunc(b,d2,v)
 
+def lor_trunc_init(b: int = 10) -> Generator[int,None,None]:
+    for v in range(1,b):
+        if prob_prime_test(v):
+            yield v
+            yield from lor_trunc(b,b,v)
+
 # helper function to do the recursion for left-and-right truncatable primes
 # b >= 2 is the base
 # d is the place value of the leftmost digit of v
@@ -112,7 +120,7 @@ if ptype == 'l':
 elif ptype == 'r':
     primes = right_trunc(base)
 elif ptype == 'lor':
-    primes = lor_trunc(base)
+    primes = lor_trunc_init(base)
 else:
     primes = lar_trunc(base)
 

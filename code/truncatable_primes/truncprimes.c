@@ -163,60 +163,13 @@ void clear_globals()
 }
 
 /*
-Primality testing
-*/
-
-// PRP(2) test
-// should avoid calling with even inputs for efficiency
-// must not call with n == 2
-static inline bool is_prime_prp2(const mpz_t n)
-{
-    assert(mpz_odd_p(n));
-    mpz_sub_ui(_g_tmp0,n,1); // n-1
-    mpz_powm(_g_tmp0,MPZ_2,_g_tmp0,n); // 2^(n-1) mod n
-    return mpz_cmp_ui(_g_tmp0,1) == 0; // == 1
-}
-
-// SPRP(2) test
-// must only call with odd n > 2
-static inline bool is_prime_sprp2(const mpz_t n)
-{
-    assert(mpz_odd_p(n));
-    mpz_sub_ui(_g_tmp0,n,1); // _g_tmp0 == n-1
-    uint32_t s = mpz_scan1(_g_tmp0,0);
-    assert(s);
-    mpz_fdiv_q_2exp(_g_tmp1,_g_tmp0,s); // n-1 == _g_tmp1 * 2^s
-    mpz_powm(_g_tmp1,MPZ_2,_g_tmp1,n);
-    if (mpz_cmp_ui(_g_tmp1,1) == 0 || mpz_cmp(_g_tmp1,_g_tmp0) == 0) // 1,n-1
-        return true;
-    --s;
-    while (s--) // s-1 squarings
-    {
-        mpz_powm_ui(_g_tmp1,_g_tmp1,2,n); // square
-        if (mpz_cmp(_g_tmp1,_g_tmp0) == 0) // n-1
-            return true;
-        // squaring 0 or 1 further will never result in n-1
-        if (mpz_cmp_ui(_g_tmp1,1) <= 0) // from GMP code
-            return false;
-    }
-    return false;
-}
-
-// BPSW test (not implemented)
-static inline bool is_prime_bpsw(const mpz_t n)
-{
-    assert(0);
-    return false;
-}
-
-/*
 Truncatable primes recursion functions
 These write the subtree bytes and the end byte
 The caller is responsible for writing the value byte(s)
 */
 
 // primality test to use as a macro, n=2 must be handled separately
-#define PRIME_TEST(n) (mpz_odd_p(n) && is_prime_sprp2(n))
+#define PRIME_TEST(n) mpz_probab_prime_p(n,0)
 
 // right truncatable (A024770 for base 10)
 void primes_r()
@@ -367,7 +320,7 @@ void primes_init_1digit(void (*fptr)(), int byte2)
     {
         mpz_set_ui(_g_value,root);
         _g_depth = 1;
-        if (mpz_cmp_ui(_g_value,2) == 0 || PRIME_TEST(_g_value))
+        if (PRIME_TEST(_g_value))
         {
             if (byte2 != -1)
                 write_byte(byte2);
@@ -388,7 +341,7 @@ void primes_init_2digit(void (*fptr)())
         {
             mpz_set_ui(_g_value,rootl*_g_base+rootr);
             _g_depth = 2;
-            if (mpz_cmp_ui(_g_value,2) == 0 || PRIME_TEST(_g_value))
+            if (PRIME_TEST(_g_value))
             {
                 write_byte(rootl); // root
                 write_byte(rootr);

@@ -90,12 +90,6 @@ static inline void write_byte(char b)
     }
 }
 
-// integers 0-3 for where basic C type is not supported (such as exponent base)
-mpz_t MPZ_0, MPZ_1, MPZ_2, MPZ_3;
-
-// for temporary variables in functions
-mpz_t _g_tmp0, _g_tmp1;
-
 // for recursion
 // _g_base must never be modified
 // _g_depth must be set correctly before calling a recursive function
@@ -140,11 +134,6 @@ void init_globals()
 {
     _g_buffer = malloc(BUFFER_SIZE);
     _g_buffer_index = 0;
-    mpz_init_set_ui(MPZ_0,0);
-    mpz_init_set_ui(MPZ_1,1);
-    mpz_init_set_ui(MPZ_2,2);
-    mpz_init_set_ui(MPZ_3,3);
-    mpz_inits(_g_tmp0,_g_tmp1,NULL);
     mpz_init(_g_value);
     _g_powers = malloc(sizeof(mpz_t));
     mpz_init_set_ui(_g_powers[0],1);
@@ -154,8 +143,6 @@ void init_globals()
 void clear_globals()
 {
     free(_g_buffer);
-    mpz_clears(MPZ_0,MPZ_1,MPZ_2,MPZ_3,NULL);
-    mpz_clears(_g_tmp0,_g_tmp1,NULL);
     mpz_clear(_g_value);
     for (uint32_t i = 0; i < _g_plen; ++i)
         mpz_clear(_g_powers[i]);

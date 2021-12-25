@@ -31,7 +31,7 @@ Binary format for the recursion tree:
     tree... - zero or more trees
     end - a single 255 byte
     note that this format does not contain the base or root value
-    the root value is 0 (or 2 zero bytes)
+    the root value is 255 (1 or 2 bytes depending on prime type)
     
     pseudocode showing how to read this format
     next(bytes): extracts next byte from the stream
@@ -309,9 +309,9 @@ Recursion setup functions
 // set byte2 for cases where tree values are 2 bytes
 void primes_init_root(uint64_t root, void (*fptr)(), bool byte2)
 {
-    write_byte(0); // root value
+    write_byte(255); // root value
     if (byte2) // 2nd byte for root value
-        write_byte(0);
+        write_byte(255);
     mpz_set_ui(_g_stack[0],root);
     _g_depth = 0;
     _g_rlen = 0;
@@ -374,7 +374,7 @@ void primes_r_init(uint64_t root)
         primes_init_root(root,primes_r,false);
     else
     {
-        write_byte(0); // root value
+        write_byte(255); // root value
         primes_init_1digit(primes_r,-1);
         write_byte(255); // end
     }
@@ -387,7 +387,7 @@ void primes_l_init(uint64_t root)
         primes_init_root(root,primes_l,false);
     else
     {
-        write_byte(0); // root value
+        write_byte(255); // root value
         primes_init_1digit(primes_l,-1);
         write_byte(255); // end
     }
@@ -400,8 +400,8 @@ void primes_lor_init(uint64_t root)
         primes_init_root(root,primes_lor,true);
     else
     {
-        write_byte(0); // root value
-        write_byte(0);
+        write_byte(255); // root value
+        write_byte(255);
         primes_init_1digit(primes_lor,0);
         write_byte(255); // end
     }
@@ -414,8 +414,8 @@ void primes_lar_init(uint64_t root)
         primes_init_root(root,primes_lar,true);
     else
     {
-        write_byte(0); // root value
-        write_byte(0);
+        write_byte(255); // root value
+        write_byte(255);
         primes_init_1digit(primes_lar,0);
         primes_init_2digit(primes_lar);
         write_byte(255); // end

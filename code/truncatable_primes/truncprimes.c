@@ -96,9 +96,12 @@ static inline void write_byte(char b)
 // _g_value must be returned to its original value afterward (backtracking)
 // _g_powers must grow when necessary and _g_plen updated accordingly
 uint32_t _g_base; // number base, used as a constant, must be >= 2
-uint32_t _g_depth; // recursion depth / number of digits (in given base)
+uint32_t _g_depth; // recursion depth
 uint32_t _g_maxdepth; // depth limit
-mpz_t _g_value; // number used in recursion, manipulated in place
+uint32_t _g_rlen; // root length (digits in specified base)
+uint32_t _g_maxlength; // length limit (digits in specified base), constant
+mpz_t *_g_stack; // recursion stack
+uint32_t _g_slen; // length of _g_stack
 mpz_t *_g_powers; // powers of the base, _g_powers[i] = base^i
 uint32_t _g_plen; // length of _g_powers
 
@@ -119,6 +122,18 @@ static inline mpz_t *get_power(uint32_t p)
     return _g_powers+p;
 }
 
+// grows the stack to ensure space for _g_stack[i]
+static inline void ensure_stack_space(uint32_t i)
+{
+    if (i >= _g_slen)
+    {
+        _g_stack = realloc(_g_stack,sizeof(mpz_t)*(i+1));
+        for (uint32_t j = _g_slen; j <= i; ++j)
+            mpz_init(_g_stack[j]);
+        _g_slen = i+1;
+    }
+}
+
 // checks if a string is a number
 bool is_number(const char *s)
 {
@@ -134,7 +149,9 @@ void init_globals()
 {
     _g_buffer = malloc(BUFFER_SIZE);
     _g_buffer_index = 0;
-    mpz_init(_g_value);
+    _g_stack = malloc(sizeof(mpz_t));
+    mpz_init(_g_stack[0]);
+    _g_slen = 1;
     _g_powers = malloc(sizeof(mpz_t));
     mpz_init_set_ui(_g_powers[0],1);
     _g_plen = 1;
@@ -143,7 +160,9 @@ void init_globals()
 void clear_globals()
 {
     free(_g_buffer);
-    mpz_clear(_g_value);
+    for (uint32_t i = 0; i < _g_slen; ++i)
+        mpz_clear(_g_stack[i]);
+    free(_g_stack);
     for (uint32_t i = 0; i < _g_plen; ++i)
         mpz_clear(_g_powers[i]);
     free(_g_powers);
@@ -155,8 +174,15 @@ These write the subtree bytes and the end byte
 The caller is responsible for writing the value byte(s)
 */
 
+// macros for recursion usage
+#define STACK_CURR (_g_stack[_g_depth])
+#define STACK_PREV (_g_stack[_g_depth-1])
+#define POWER_CURR (*get_power(_g_rlen+_g_depth-1))
+#define CHECK_STACK ensure_stack_space(_g_depth)
+
 // primality test to use as a macro, n=2 must be handled separately
 #define PRIME_TEST(n) mpz_probab_prime_p(n,0)
+#define PRIME_TEST_CURR PRIME_TEST(STACK_CURR)
 
 // right truncatable (A024770 for base 10)
 void primes_r()
@@ -164,20 +190,19 @@ void primes_r()
     ++_g_depth;
     if (_g_depth <= _g_maxdepth)
     {
+        CHECK_STACK;
         // left shift to create a 0 digit on the right
-        mpz_mul_ui(_g_value,_g_value,_g_base);
+        mpz_mul_ui(STACK_CURR,STACK_PREV,_g_base);
         for (uint32_t d = 1; d < _g_base; ++d)
         {
             // increment right digit
-            mpz_add_ui(_g_value,_g_value,1);
-            if (PRIME_TEST(_g_value))
+            mpz_add_ui(STACK_CURR,STACK_CURR,1);
+            if (PRIME_TEST_CURR)
             {
                 write_byte(d); // subtree
                 primes_r();
             }
         }
-        // backtrack
-        mpz_div_ui(_g_value,_g_value,_g_base);
     }
     --_g_depth;
     write_byte(255); // end
@@ -189,18 +214,18 @@ void primes_l()
     ++_g_depth;
     if (_g_depth <= _g_maxdepth)
     {
+        CHECK_STACK;
+        mpz_set(STACK_CURR,STACK_PREV);
         for (uint32_t d = 1; d < _g_base; ++d)
         {
             // increment left digit
-            mpz_add(_g_value,_g_value,*get_power(_g_depth-1));
-            if (PRIME_TEST(_g_value))
+            mpz_add(STACK_CURR,STACK_CURR,POWER_CURR);
+            if (PRIME_TEST_CURR)
             {
                 write_byte(d); // subtree
                 primes_l();
             }
         }
-        // backtrack
-        mpz_submul_ui(_g_value,*get_power(_g_depth-1),_g_base-1);
     }
     --_g_depth;
     write_byte(255); // end
@@ -212,54 +237,56 @@ void primes_lor()
     ++_g_depth;
     if (_g_depth <= _g_maxdepth)
     {
+        CHECK_STACK;
         // append left
+        mpz_set(STACK_CURR,STACK_PREV);
         for (uint32_t d = 1; d < _g_base; ++d)
         {
-            mpz_add(_g_value,_g_value,*get_power(_g_depth-1));
-            if (PRIME_TEST(_g_value))
+            mpz_add(STACK_CURR,STACK_CURR,POWER_CURR);
+            if (PRIME_TEST_CURR)
             {
                 write_byte(0); // subtree
                 write_byte(d);
                 primes_lor();
             }
         }
-        // backtrack
-        mpz_submul_ui(_g_value,*get_power(_g_depth-1),_g_base-1);
         // append right
-        mpz_mul_ui(_g_value,_g_value,_g_base);
+        mpz_mul_ui(STACK_CURR,STACK_PREV,_g_base);
         for (uint32_t d = 1; d < _g_base; ++d)
         {
-            mpz_add_ui(_g_value,_g_value,1);
-            if (PRIME_TEST(_g_value))
+            mpz_add_ui(STACK_CURR,STACK_CURR,1);
+            if (PRIME_TEST_CURR)
             {
                 write_byte(1); // subtree
                 write_byte(d);
                 primes_lor();
             }
         }
-        // backtrack
-        mpz_div_ui(_g_value,_g_value,_g_base);
     }
     --_g_depth;
     write_byte(255); // end
 }
 
+// 2 digits at a time so use 2*_g_depth instead of _g_depth
+#define LAR_POWER_INDEX (_g_rlen + (_g_depth << 1) - 1)
+
 // left and right truncatable (A077390 for base 10)
 void primes_lar()
 {
-    _g_depth += 2;
-    if (_g_depth <= _g_maxdepth)
+    ++_g_depth;
+    if ((_g_depth<<1) <= _g_maxdepth)
     {
-        mpz_mul_ui(_g_value,_g_value,_g_base); // shift left
+        CHECK_STACK;
+        mpz_mul_ui(STACK_CURR,STACK_PREV,_g_base); // shift left
         for (uint32_t dl = 1; dl < _g_base; ++dl)
         {
             // increment left digit
-            mpz_add(_g_value,_g_value,*get_power(_g_depth-1));
+            mpz_add(STACK_CURR,STACK_CURR,*get_power(LAR_POWER_INDEX));
             // right digit loop
             for (uint32_t dr = 1; dr < _g_base; ++dr)
             {
-                mpz_add_ui(_g_value,_g_value,1);
-                if (PRIME_TEST(_g_value))
+                mpz_add_ui(STACK_CURR,STACK_CURR,1);
+                if (PRIME_TEST_CURR)
                 {
                     write_byte(dl); // subtree
                     write_byte(dr);
@@ -267,13 +294,10 @@ void primes_lar()
                 }
             }
             // backtrack right digit increment
-            mpz_sub_ui(_g_value,_g_value,_g_base-1);
+            mpz_sub_ui(STACK_CURR,STACK_CURR,_g_base-1);
         }
-        // backtrack left append, then shift right
-        mpz_submul_ui(_g_value,*get_power(_g_depth-1),_g_base-1);
-        mpz_div_ui(_g_value,_g_value,_g_base);
     }
-    _g_depth -= 2;
+    --_g_depth;
     write_byte(255); // end
 }
 
@@ -288,10 +312,12 @@ void primes_init_root(uint64_t root, void (*fptr)(), bool byte2)
     write_byte(0); // root value
     if (byte2) // 2nd byte for root value
         write_byte(0);
-    mpz_set_ui(_g_value,root);
+    mpz_set_ui(_g_stack[0],root);
     _g_depth = 0;
+    _g_rlen = 0;
+    _g_maxdepth = _g_maxlength;
     while (root)
-        ++_g_depth, root /= _g_base;
+        ++_g_rlen, root /= _g_base;
     fptr(); // writes subtrees and end
 }
 
@@ -301,13 +327,15 @@ void primes_init_root(uint64_t root, void (*fptr)(), bool byte2)
 // for left and right truncatable primes, it should be 0
 void primes_init_1digit(void (*fptr)(), int byte2)
 {
-    if (_g_maxdepth < 1)
+    if (_g_maxlength < 1)
         return;
     for (uint64_t root = 2; root < _g_base; ++root)
     {
-        mpz_set_ui(_g_value,root);
-        _g_depth = 1;
-        if (PRIME_TEST(_g_value))
+        mpz_set_ui(_g_stack[0],root);
+        _g_depth = 0;
+        _g_rlen = 1;
+        _g_maxdepth = _g_maxlength - 1;
+        if (PRIME_TEST(_g_stack[0]))
         {
             if (byte2 != -1)
                 write_byte(byte2);
@@ -321,14 +349,16 @@ void primes_init_1digit(void (*fptr)(), int byte2)
 // only used for left and right truncatable primes
 void primes_init_2digit(void (*fptr)())
 {
-    if (_g_maxdepth < 2)
+    if (_g_maxlength < 2)
         return;
     for (uint64_t rootl = 1; rootl < _g_base; ++rootl)
         for (uint64_t rootr = 0; rootr < _g_base; ++rootr)
         {
-            mpz_set_ui(_g_value,rootl*_g_base+rootr);
-            _g_depth = 2;
-            if (PRIME_TEST(_g_value))
+            mpz_set_ui(_g_stack[0],rootl*_g_base+rootr);
+            _g_depth = 0;
+            _g_rlen = 2;
+            _g_maxdepth = _g_maxlength - 2;
+            if (PRIME_TEST(_g_stack[0]))
             {
                 write_byte(rootl); // root
                 write_byte(rootr);
@@ -401,7 +431,7 @@ int main(int argc, char **argv)
     init_globals();
     // set default values
     _g_base = 10;
-    _g_maxdepth = -1;
+    _g_maxlength = -1;
     char *prime_type = NULL;
     uint64_t root = 0;
     if (argc < 2)
@@ -430,7 +460,7 @@ int main(int argc, char **argv)
                 fprintf(stderr,"max length must be a number\n");
                 return 0;
             }
-            _g_maxdepth = atoi(optarg);
+            _g_maxlength = atoi(optarg);
             break;
         case 'p': // prime type
             prime_type = optarg;

@@ -33,7 +33,8 @@ const struct option OPTION_LONG[] =
     { "input_base",  required_argument, 0, 'i' },
     { "output_base", required_argument, 0, 'o' },
     { "prime_type",  required_argument, 0, 'p' },
-    { "root",        required_argument, 0, 'r' }
+    { "root",        required_argument, 0, 'r' },
+    { 0,             0,                 0, 0   }
 };
 
 // buffer

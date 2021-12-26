@@ -71,7 +71,7 @@ const struct option OPTION_LONG[] =
 };
 
 // buffer
-#define BUFFER_SIZE (1<<20)
+#define BUFFER_SIZE (1<<16)
 char *_g_buffer;
 uint32_t _g_buffer_index;
 

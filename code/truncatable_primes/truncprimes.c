@@ -180,7 +180,8 @@ The caller is responsible for writing the value byte(s)
 #define POWER_CURR (*get_power(_g_rlen+_g_depth-1))
 #define CHECK_STACK ensure_stack_space(_g_depth)
 
-// primality test to use as a macro, n=2 must be handled separately
+// primality test to use as a macro
+// with GMP 6.2.0 it will run a BPSW test only if reps < 25
 #define PRIME_TEST(n) mpz_probab_prime_p(n,0)
 #define PRIME_TEST_CURR PRIME_TEST(STACK_CURR)
 

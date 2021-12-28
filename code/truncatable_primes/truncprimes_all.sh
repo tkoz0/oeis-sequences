@@ -79,20 +79,14 @@ cat ./$DIR/job_roots.txt \
     >> ./$DIR/parallel.stdout
 #        ./truncprimes -p $PRIME_TYPE -b $BASE -r {} '|' xz '>' ./$DIR/root_{}.bin.xz \
 
-# combine job subtrees together
-echo merging job files into tree.bin
-python3 tree_combine.py ./$DIR $PRIME_TYPE $BASE
+# combine subtrees together when all jobs complete successfully
+if [ $? -eq 0 ]
+then
+    echo merging job files into tree.bin
+    python3 tree_combine.py ./$DIR $PRIME_TYPE $BASE
+else
+    echo \>= 1 failed job, not merging
+fi
 
 echo END
 exit
-
-# combine all results into a list
-cp ./$DIR/root.txt ./$DIR/list.txt
-for r in $(cat ./$DIR/job_roots.txt)
-do
-    #echo root $r has $(cat ./$DIR/root_$r.bin | ./tree_convert -p $PRIME_TYPE -i $BASE -r $r | wc -l) numbers
-    cat ./$DIR/root_$r.bin | ./tree_convert -p $PRIME_TYPE -i $BASE -r $r >> ./$DIR/list.txt
-done
-echo total of $(cat ./$DIR/list.txt | wc -l) numbers
-
-echo END

@@ -27,8 +27,8 @@ for f in os.listdir(input_dir):
     if m:
         job_files[int(m.groups()[0])] = input_dir+'/'+f
 
-BUFFER_SIZE = 2**16
-root_bin = open(input_dir+'/root.bin','rb',buffering=BUFFER_SIZE)
+BUFFER_SIZE = 2**24
+root_bin = open(input_dir+'/root.bin','rb')
 tree_bin = open(input_dir+'/tree.bin','wb',buffering=BUFFER_SIZE)
 
 # read a byte from root_bin

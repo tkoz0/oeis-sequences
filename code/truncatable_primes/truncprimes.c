@@ -69,15 +69,20 @@ const struct option OPTION_LONG[] =
     { "root",       required_argument, 0, 'r' },
     { 0,            0,                 0, 0   }
 };
+char *_g_prime_type;
+uint64_t _g_root;
 
 // buffer
 #define BUFFER_SIZE (1<<16)
+#ifdef WRITE_TREE
 char *_g_buffer;
 uint32_t _g_buffer_index;
+#endif
 
 // write a byte to the buffer, flush to stdout when full
 static inline void write_byte(char b)
 {
+#ifdef WRITE_TREE
     _g_buffer[_g_buffer_index++] = b;
     if (_g_buffer_index == BUFFER_SIZE)
     {
@@ -88,6 +93,7 @@ static inline void write_byte(char b)
         }
         _g_buffer_index = 0;
     }
+#endif
 }
 
 // for recursion
@@ -104,6 +110,19 @@ mpz_t *_g_stack; // recursion stack
 uint32_t _g_slen; // length of _g_stack
 mpz_t *_g_powers; // powers of the base, _g_powers[i] = base^i
 uint32_t _g_plen; // length of _g_powers
+
+// for stats output
+// uses _g_slen to keep n digit min/max arrays the same length as _g_stack
+// _g_pmin[i] = min prime of all on recursion level i
+// _g_pmax[i] = max prime of all on recursion level i
+// _g_counts[i][0] = count of non-leaf nodes on recursion level i
+// _g_counts[i][1] = count of leaf nodes on recursion level i
+// primes on recursion level i = _g_counts[i][0] + _g_counts[i][1]
+#ifdef WRITE_STATS
+mpz_t **_g_pmin, **_g_pmax;
+uint64_t **_g_counts;
+uint32_t _g_max_children;
+#endif
 
 // returns a pointer to the mpz_t variable representing base^p
 // grows the array of base powers when necessary
@@ -122,14 +141,45 @@ static inline mpz_t *get_power(uint32_t p)
     return _g_powers+p;
 }
 
+// update the min and max using current stack value and recursion depth
+// parameter is the number of child vertices
+static inline void update_min_max(uint32_t cc)
+{
+#ifdef WRITE_STATS
+    // also handles updating min for initial value 0
+    if (mpz_cmp_ui(_g_pmin[_g_depth][cc],0) == 0
+     || mpz_cmp(_g_pmin[_g_depth][cc],_g_stack[_g_depth]) > 0)
+        mpz_set(_g_pmin[_g_depth][cc],_g_stack[_g_depth]);
+    if (mpz_cmp(_g_pmax[_g_depth][cc],_g_stack[_g_depth]) < 0)
+        mpz_set(_g_pmax[_g_depth][cc],_g_stack[_g_depth]);
+#endif
+}
+
 // grows the stack to ensure space for _g_stack[i]
 static inline void ensure_stack_space(uint32_t i)
 {
     if (i >= _g_slen)
     {
-        _g_stack = realloc(_g_stack,sizeof(mpz_t)*(i+1));
+        _g_stack = realloc(_g_stack,sizeof(*_g_stack)*(i+1));
+#ifdef WRITE_STATS
+        _g_pmin = realloc(_g_pmin,sizeof(*_g_pmin)*(i+1));
+        _g_pmax = realloc(_g_pmax,sizeof(*_g_pmax)*(i+1));
+        _g_counts = realloc(_g_counts,sizeof(*_g_counts)*(i+1));
+#endif
         for (uint32_t j = _g_slen; j <= i; ++j)
+        {
             mpz_init(_g_stack[j]);
+#ifdef WRITE_STATS
+            _g_pmin[j] = malloc(_g_max_children*sizeof(**_g_pmin));
+            _g_pmax[j] = malloc(_g_max_children*sizeof(**_g_pmax));
+            _g_counts[j] = calloc(_g_max_children,sizeof(**_g_counts));
+            for (uint32_t k = 0; k < _g_max_children; ++k)
+            {
+                mpz_init(_g_pmin[j][k]);
+                mpz_init(_g_pmax[j][k]);
+            }
+#endif
+        }
         _g_slen = i+1;
     }
 }
@@ -147,8 +197,29 @@ bool is_number(const char *s)
 
 void init_globals()
 {
+#ifdef WRITE_TREE
     _g_buffer = malloc(BUFFER_SIZE);
     _g_buffer_index = 0;
+#endif
+#ifdef WRITE_STATS
+    if (strcmp("lor",_g_prime_type) == 0)
+        _g_max_children = 2*_g_base;
+    else if (strcmp("lar",_g_prime_type) == 0)
+        _g_max_children = _g_base*_g_base;
+    else
+        _g_max_children = _g_base;
+    _g_pmin = malloc(sizeof(*_g_pmin));
+    _g_pmax = malloc(sizeof(*_g_pmax));
+    _g_counts = malloc(sizeof(*_g_counts));
+    _g_pmin[0] = malloc(_g_max_children*sizeof(**_g_pmin));
+    _g_pmax[0] = malloc(_g_max_children*sizeof(**_g_pmax));
+    _g_counts[0] = calloc(_g_max_children,sizeof(**_g_counts));
+    for (uint32_t k = 0; k < _g_max_children; ++k)
+    {
+        mpz_init(_g_pmin[0][k]);
+        mpz_init(_g_pmax[0][k]);
+    }
+#endif
     _g_stack = malloc(sizeof(mpz_t));
     mpz_init(_g_stack[0]);
     _g_slen = 1;
@@ -159,9 +230,28 @@ void init_globals()
 
 void clear_globals()
 {
+#ifdef WRITE_TREE
     free(_g_buffer);
+#endif
     for (uint32_t i = 0; i < _g_slen; ++i)
+    {
         mpz_clear(_g_stack[i]);
+#ifdef WRITE_STATS
+        for (uint32_t k = 0; k < _g_max_children; ++k)
+        {
+            mpz_clear(_g_pmin[i][k]);
+            mpz_clear(_g_pmax[i][k]);
+        }
+        free(_g_pmin[i]);
+        free(_g_pmax[i]);
+        free(_g_counts[i]);
+#endif
+    }
+#ifdef WRITE_STATS
+    free(_g_pmin);
+    free(_g_pmax);
+    free(_g_counts);
+#endif
     free(_g_stack);
     for (uint32_t i = 0; i < _g_plen; ++i)
         mpz_clear(_g_powers[i]);
@@ -181,7 +271,7 @@ The caller is responsible for writing the value byte(s)
 #define CHECK_STACK ensure_stack_space(_g_depth)
 
 // primality test to use as a macro
-// with GMP 6.2.0 it will run a BPSW test only if reps < 25
+// with GMP 6.2.0 it will run only a BPSW test when reps < 25
 #define PRIME_TEST(n) mpz_probab_prime_p(n,0)
 #define PRIME_TEST_CURR PRIME_TEST(STACK_CURR)
 
@@ -189,6 +279,9 @@ The caller is responsible for writing the value byte(s)
 void primes_r()
 {
     ++_g_depth;
+#ifdef WRITE_STATS
+    uint32_t children = 0;
+#endif
     if (_g_depth <= _g_maxdepth)
     {
         CHECK_STACK;
@@ -200,12 +293,19 @@ void primes_r()
             mpz_add_ui(STACK_CURR,STACK_CURR,1);
             if (PRIME_TEST_CURR)
             {
+#ifdef WRITE_STATS
+                ++children;
+#endif
                 write_byte(d); // subtree
                 primes_r();
             }
         }
     }
     --_g_depth;
+#ifdef WRITE_STATS
+    ++_g_counts[_g_depth][children];
+    update_min_max(children);
+#endif
     write_byte(255); // end
 }
 
@@ -213,6 +313,9 @@ void primes_r()
 void primes_l()
 {
     ++_g_depth;
+#ifdef WRITE_STATS
+    uint32_t children = 0;
+#endif
     if (_g_depth <= _g_maxdepth)
     {
         CHECK_STACK;
@@ -223,12 +326,19 @@ void primes_l()
             mpz_add(STACK_CURR,STACK_CURR,POWER_CURR);
             if (PRIME_TEST_CURR)
             {
+#ifdef WRITE_STATS
+                ++children;
+#endif
                 write_byte(d); // subtree
                 primes_l();
             }
         }
     }
     --_g_depth;
+#ifdef WRITE_STATS
+    ++_g_counts[_g_depth][children];
+    update_min_max(children);
+#endif
     write_byte(255); // end
 }
 
@@ -236,6 +346,9 @@ void primes_l()
 void primes_lor()
 {
     ++_g_depth;
+#ifdef WRITE_STATS
+    uint32_t children = 0;
+#endif
     if (_g_depth <= _g_maxdepth)
     {
         CHECK_STACK;
@@ -246,6 +359,9 @@ void primes_lor()
             mpz_add(STACK_CURR,STACK_CURR,POWER_CURR);
             if (PRIME_TEST_CURR)
             {
+#ifdef WRITE_STATS
+                ++children;
+#endif
                 write_byte(0); // subtree
                 write_byte(d);
                 primes_lor();
@@ -258,6 +374,9 @@ void primes_lor()
             mpz_add_ui(STACK_CURR,STACK_CURR,1);
             if (PRIME_TEST_CURR)
             {
+#ifdef WRITE_STATS
+                ++children;
+#endif
                 write_byte(1); // subtree
                 write_byte(d);
                 primes_lor();
@@ -265,6 +384,10 @@ void primes_lor()
         }
     }
     --_g_depth;
+#ifdef WRITE_STATS
+    ++_g_counts[_g_depth][children];
+    update_min_max(children);
+#endif
     write_byte(255); // end
 }
 
@@ -275,6 +398,9 @@ void primes_lor()
 void primes_lar()
 {
     ++_g_depth;
+#ifdef WRITE_STATS
+    uint32_t children = 0;
+#endif
     if ((_g_depth<<1) <= _g_maxdepth)
     {
         CHECK_STACK;
@@ -289,6 +415,9 @@ void primes_lar()
                 mpz_add_ui(STACK_CURR,STACK_CURR,1);
                 if (PRIME_TEST_CURR)
                 {
+#ifdef WRITE_STATS
+                    ++children;
+#endif
                     write_byte(dl); // subtree
                     write_byte(dr);
                     primes_lar();
@@ -299,6 +428,10 @@ void primes_lar()
         }
     }
     --_g_depth;
+#ifdef WRITE_STATS
+    ++_g_counts[_g_depth][children];
+    update_min_max(children);
+#endif
     write_byte(255); // end
 }
 
@@ -316,9 +449,9 @@ void primes_init_root(uint64_t root, void (*fptr)(), bool byte2)
     mpz_set_ui(_g_stack[0],root);
     _g_depth = 0;
     _g_rlen = 0;
-    _g_maxdepth = _g_maxlength;
     while (root)
         ++_g_rlen, root /= _g_base;
+    _g_maxdepth = _g_maxlength - _g_rlen;
     fptr(); // writes subtrees and end
 }
 
@@ -368,6 +501,69 @@ void primes_init_2digit(void (*fptr)())
         }
 }
 
+// writes statistics in text format to stdout
+// mult is number of digits appended at each recursion level
+// header is whether to write first lines (not for 2nd time with lar primes)
+void write_stats(uint32_t mult, bool header)
+{
+#ifdef WRITE_STATS
+    if (header)
+    {
+        printf("# prime_type = %s\n",_g_prime_type);
+        printf("# base = %u\n",_g_base);
+        printf("# root = %lu\n",_g_root);
+        printf("# max_length = %u\n",_g_maxlength);
+        if (!strcmp(_g_prime_type,"lor"))
+            printf("# NOTE: counts are not applicable\n");
+        printf("digits,all");
+        for (uint32_t k = 0; k < _g_max_children; ++k)
+            printf(",%u",k);
+        printf("\n");
+    }
+    uint64_t count_all;
+    mpz_t min_all,max_all;
+    mpz_init(min_all);
+    mpz_init(max_all);
+    for (uint32_t i = 0; i < _g_slen; ++i)
+    {
+        printf("%u,",_g_rlen+i*mult);
+        count_all = 0;
+        mpz_set_ui(min_all,0);
+        mpz_set_ui(max_all,0);
+        for (uint32_t k = 0; k < _g_max_children; ++k)
+        {
+            count_all += _g_counts[i][k];
+            if (mpz_cmp_ui(min_all,0) == 0
+             || (mpz_cmp(min_all,_g_pmin[i][k]) > 0
+                 && mpz_cmp_ui(_g_pmin[i][k],0) != 0))
+                mpz_set(min_all,_g_pmin[i][k]);
+            if (mpz_cmp(max_all,_g_pmax[i][k]) < 0)
+                mpz_set(max_all,_g_pmax[i][k]);
+        }
+        printf("%lu",count_all);
+        for (uint32_t k = 0; k < _g_max_children; ++k)
+            printf(",%lu",_g_counts[i][k]);
+        printf("\n,");
+        mpz_out_str(NULL,10,min_all);
+        for (uint32_t k = 0; k < _g_max_children; ++k)
+        {
+            printf(",");
+            mpz_out_str(NULL,10,_g_pmin[i][k]);
+        }
+        printf("\n,");
+        mpz_out_str(NULL,10,max_all);
+        for (uint32_t k = 0; k < _g_max_children; ++k)
+        {
+            printf(",");
+            mpz_out_str(NULL,10,_g_pmax[i][k]);
+        }
+        printf("\n");
+    }
+    mpz_clear(min_all);
+    mpz_clear(max_all);
+#endif
+}
+
 // right truncatable (A024770 for base 10)
 void primes_r_init(uint64_t root)
 {
@@ -379,6 +575,7 @@ void primes_r_init(uint64_t root)
         primes_init_1digit(primes_r,-1);
         write_byte(255); // end
     }
+    write_stats(1,true);
 }
 
 // left truncatable (A024785 for base 10)
@@ -392,6 +589,7 @@ void primes_l_init(uint64_t root)
         primes_init_1digit(primes_l,-1);
         write_byte(255); // end
     }
+    write_stats(1,true);
 }
 
 // left or right truncatable (A137812 for base 10)
@@ -406,6 +604,7 @@ void primes_lor_init(uint64_t root)
         primes_init_1digit(primes_lor,0);
         write_byte(255); // end
     }
+    write_stats(1,true);
 }
 
 // left and right truncatable (A077390 for base 10)
@@ -418,7 +617,13 @@ void primes_lar_init(uint64_t root)
         write_byte(255); // root value
         write_byte(255);
         primes_init_1digit(primes_lar,0);
+        write_stats(2,true); // odd lengths
+#ifdef WRITE_STATS
+        clear_globals();
+        init_globals();
+#endif
         primes_init_2digit(primes_lar);
+        write_stats(2,false); // even lengths
         write_byte(255); // end
     }
 }
@@ -429,12 +634,11 @@ Main function
 
 int main(int argc, char **argv)
 {
-    init_globals();
     // set default values
     _g_base = 10;
     _g_maxlength = -1;
-    char *prime_type = NULL;
-    uint64_t root = 0;
+    _g_prime_type = NULL;
+    _g_root = 0;
     if (argc < 2)
     {
         fprintf(stderr,"truncprimes <-p prime_type> "
@@ -464,7 +668,7 @@ int main(int argc, char **argv)
             _g_maxlength = atoi(optarg);
             break;
         case 'p': // prime type
-            prime_type = optarg;
+            _g_prime_type = optarg;
             break;
         case 'r': // root
             if (!is_number(optarg))
@@ -472,7 +676,7 @@ int main(int argc, char **argv)
                 fprintf(stderr,"root must be a number\n");
                 return 0;
             }
-            root = atoll(optarg);
+            _g_root = atoll(optarg);
             break;
         default:
             fprintf(stderr,"error parsing arguments\n");
@@ -486,27 +690,30 @@ int main(int argc, char **argv)
         fprintf(stderr,"base %u out of valid range (2-255)\n",_g_base);
         return 0;
     }
-    if (!prime_type)
+    if (!_g_prime_type)
     {
         fprintf(stderr,"must specify prime type\n");
         return 0;
     }
-    if (strcmp(prime_type,"r") == 0)
-        primes_r_init(root);
-    else if (strcmp(prime_type,"l") == 0)
-        primes_l_init(root);
-    else if (strcmp(prime_type,"lor") == 0)
-        primes_lor_init(root);
-    else if (strcmp(prime_type,"lar") == 0)
-        primes_lar_init(root);
+    init_globals();
+    if (strcmp(_g_prime_type,"r") == 0)
+        primes_r_init(_g_root);
+    else if (strcmp(_g_prime_type,"l") == 0)
+        primes_l_init(_g_root);
+    else if (strcmp(_g_prime_type,"lor") == 0)
+        primes_lor_init(_g_root);
+    else if (strcmp(_g_prime_type,"lar") == 0)
+        primes_lar_init(_g_root);
     else
-        fprintf(stderr,"invalid prime type: %s\n",prime_type);
+        fprintf(stderr,"invalid prime type: %s\n",_g_prime_type);
     // flush buffer and exit
+#ifdef WRITE_TREE
     if (write(1,_g_buffer,_g_buffer_index) != _g_buffer_index)
     {
         fprintf(stderr,"unable to write output\n");
         exit(1);
     }
+#endif
     clear_globals();
     return 0;
 }

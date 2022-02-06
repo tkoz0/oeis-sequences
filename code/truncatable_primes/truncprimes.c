@@ -70,7 +70,7 @@ const struct option OPTION_LONG[] =
     { 0,            0,                 0, 0   }
 };
 char *_g_prime_type;
-uint64_t _g_root;
+mpz_t _g_root;
 
 // buffer
 #define BUFFER_SIZE (1<<16)
@@ -441,16 +441,22 @@ Recursion setup functions
 
 // write the full tree given a root value
 // set byte2 for cases where tree values are 2 bytes
-void primes_init_root(uint64_t root, void (*fptr)(), bool byte2)
+void primes_init_root(void (*fptr)(), bool byte2)
 {
     write_byte(255); // root value
     if (byte2) // 2nd byte for root value
         write_byte(255);
-    mpz_set_ui(_g_stack[0],root);
+    mpz_set(_g_stack[0],_g_root);
     _g_depth = 0;
     _g_rlen = 0;
-    while (root)
-        ++_g_rlen, root /= _g_base;
+    mpz_t root;
+    mpz_init_set(root,_g_root);
+    while (mpz_cmp_ui(root,0) > 0) // count digits
+    {
+        ++_g_rlen;
+        mpz_div_ui(root,root,_g_base);
+    }
+    mpz_clear(root);
     _g_maxdepth = _g_maxlength - _g_rlen;
     fptr(); // writes subtrees and end
 }
@@ -501,6 +507,10 @@ void primes_init_2digit(void (*fptr)())
         }
 }
 
+/*
+Statistics output function
+*/
+
 // writes statistics in text format to stdout
 // mult is number of digits appended at each recursion level
 // header is whether to write first lines (not for 2nd time with lar primes)
@@ -511,8 +521,9 @@ void write_stats(uint32_t mult, bool header)
     {
         printf("# prime_type = %s\n",_g_prime_type);
         printf("# base = %u\n",_g_base);
-        printf("# root = %lu\n",_g_root);
-        printf("# max_length = %u\n",_g_maxlength);
+        printf("# root = ");
+        mpz_out_str(NULL,10,_g_root);
+        printf("\n# max_length = %u\n",_g_maxlength);
         if (!strcmp(_g_prime_type,"lor"))
             printf("# NOTE: counts are not applicable\n");
         printf("digits,all");
@@ -564,11 +575,175 @@ void write_stats(uint32_t mult, bool header)
 #endif
 }
 
-// right truncatable (A024770 for base 10)
-void primes_r_init(uint64_t root)
+/*
+Prime type checker functions
+*/
+
+bool is_r_truncprime(const mpz_t a, uint32_t b)
 {
-    if (root)
-        primes_init_root(root,primes_r,false);
+    assert(b > 1);
+    if (mpz_cmp_ui(a,0) <= 0)
+        return false;
+    mpz_t n;
+    bool ret = true;
+    mpz_init_set(n,a);
+    while (mpz_cmp_ui(n,0) > 0) // test primality and truncate right
+    {
+        if (!PRIME_TEST(n) || mpz_div_ui(n,n,b) == 0)
+        {
+            ret = false;
+            break;
+        }
+        mpz_div_ui(n,n,b);
+    }
+    mpz_clear(n);
+    return ret;
+}
+
+bool is_l_truncprime(const mpz_t a, uint32_t b)
+{
+    assert(b > 1);
+    if (mpz_cmp_ui(a,0) <= 0)
+        return false;
+    mpz_t n,d,p;
+    bool ret = true;
+    mpz_init_set(n,a);
+    uint32_t l = 0;
+    while (mpz_cmp_ui(n,0) > 0) // count digits
+        ++l, mpz_div_ui(n,n,b);
+    mpz_set(n,a);
+    mpz_init_set_ui(d,b);
+    mpz_init(p);
+    mpz_pow_ui(p,d,l-1); // value of most significant digit
+    while (mpz_cmp_ui(n,0) > 0) // truncate digits from left
+    {
+        // test primality (n) and ensure left digit (d) is nonzero
+        if (!PRIME_TEST(n) || (mpz_div(d,n,p), mpz_cmp_ui(d,0) == 0))
+        {
+            ret = false;
+            break;
+        }
+        mpz_submul_ui(n,p,mpz_get_ui(d)); // truncate
+        mpz_div_ui(p,p,b); // value of next most significant digit
+    }
+    mpz_clears(n,d,p,NULL);
+    return ret;
+}
+
+// recursive
+bool is_lor_truncprime(const mpz_t a, uint32_t b)
+{
+    assert(b > 1);
+    if (mpz_cmp_ui(a,b) < 0) // single digit
+        return PRIME_TEST(a);
+    if (!PRIME_TEST(a))
+        return false;
+    mpz_t tr,tl,d,p; // right/left truncations, division, power
+    mpz_inits(tr,tl,d,p,NULL);
+    uint32_t l = 0;
+    mpz_set(tr,a);
+    while (mpz_cmp_ui(tr,0) > 0) // count digits
+    {
+        ++l;
+        if (mpz_div_ui(tr,tr,b) == 0) // digits must be nonzero
+            return false;
+    }
+    // at start of each iteration
+    // - tr = a prime to start with
+    // - p = value of most significant digit
+    mpz_set(tr,a);
+    mpz_set_ui(d,b);
+    mpz_pow_ui(p,d,l-1);
+    bool ret;
+    for (;;) // loop to avoid recursion where only 1 recursive call is made
+    {
+        if (mpz_cmp_ui(tr,b) < 0) // reached single digit prime
+        {
+            ret = true;
+            break;
+        }
+        mpz_div(d,tr,p); // most significant digit
+        mpz_set(tl,tr);
+        mpz_submul_ui(tl,p,mpz_get_ui(d)); // set left truncated result
+        mpz_div_ui(tr,tr,b); // set right truncated result
+        mpz_div_ui(p,p,b);
+        bool trp = PRIME_TEST(tr);
+        bool tlp = PRIME_TEST(tl);
+        if (trp)
+        {
+            if (tlp)
+            {
+                ret = is_lor_truncprime(tr,b) || is_lor_truncprime(tl,b);
+                break;
+            }
+            else // use right truncation for next iteration
+                continue;
+        }
+        else
+        {
+            if (tlp) // use left truncation for next iteration
+            {
+                mpz_set(tr,tl);
+                continue;
+            }
+            else // cannot find parent prime
+            {
+                ret = false;
+                break;
+            }
+        }
+    }
+    mpz_clears(tr,tl,d,p,NULL);
+    return ret;
+}
+
+bool is_lar_truncprime(const mpz_t a, uint32_t b)
+{
+    assert(b > 1);
+    if (mpz_cmp_ui(a,0) <= 0)
+        return false;
+    mpz_t n,d,p;
+    bool ret = true;
+    mpz_init_set(n,a);
+    uint32_t l = 0;
+    while (mpz_cmp_ui(n,0) > 0) // count digits
+        ++l, mpz_div_ui(n,n,b);
+    mpz_set(n,a);
+    mpz_init_set_ui(d,b);
+    mpz_init(p);
+    mpz_pow_ui(p,d,l-1); // value of most significant digit
+    while (mpz_cmp_ui(n,0) > 0)
+    {
+        // test primality (n) and ensure left digit (d) is nonzero
+        if (!PRIME_TEST(n) || (mpz_div(d,n,p), mpz_cmp_ui(d,0) == 0))
+        {
+            ret = false;
+            break;
+        }
+        mpz_submul_ui(n,p,mpz_get_ui(d)); // truncate left
+        mpz_div_ui(n,n,b); // truncate right
+        mpz_div_ui(p,p,b*b); // shift most significant digit value by 2
+    }
+    mpz_clears(n,d,p,NULL);
+    return ret;
+}
+
+/*
+Recursion initialization functions
+*/
+
+// right truncatable (A024770 for base 10)
+void primes_r_init()
+{
+    if (mpz_cmp_ui(_g_root,0) > 0)
+    {
+        if (!is_r_truncprime(_g_root,_g_base))
+        {
+            fprintf(stderr,"root is not right truncatable\n");
+            exit(0);
+        }
+        primes_init_root(primes_r,false);
+    }
     else
     {
         write_byte(255); // root value
@@ -579,10 +754,17 @@ void primes_r_init(uint64_t root)
 }
 
 // left truncatable (A024785 for base 10)
-void primes_l_init(uint64_t root)
+void primes_l_init()
 {
-    if (root)
-        primes_init_root(root,primes_l,false);
+    if (mpz_cmp_ui(_g_root,0) > 0)
+    {
+        if (!is_l_truncprime(_g_root,_g_base))
+        {
+            fprintf(stderr,"root is not left truncatable\n");
+            exit(0);
+        }
+        primes_init_root(primes_l,false);
+    }
     else
     {
         write_byte(255); // root value
@@ -593,10 +775,17 @@ void primes_l_init(uint64_t root)
 }
 
 // left or right truncatable (A137812 for base 10)
-void primes_lor_init(uint64_t root)
+void primes_lor_init()
 {
-    if (root)
-        primes_init_root(root,primes_lor,true);
+    if (mpz_cmp_ui(_g_root,0) > 0)
+    {
+        if (!is_lor_truncprime(_g_root,_g_base))
+        {
+            fprintf(stderr,"root is not left-or-right truncatable\n");
+            exit(0);
+        }
+        primes_init_root(primes_lor,true);
+    }
     else
     {
         write_byte(255); // root value
@@ -608,10 +797,17 @@ void primes_lor_init(uint64_t root)
 }
 
 // left and right truncatable (A077390 for base 10)
-void primes_lar_init(uint64_t root)
+void primes_lar_init()
 {
-    if (root)
-        primes_init_root(root,primes_lar,true);
+    if (mpz_cmp_ui(_g_root,0) > 0)
+    {
+        if (!is_lar_truncprime(_g_root,_g_base))
+        {
+            fprintf(stderr,"root is not left-and-right truncatable\n");
+            exit(0);
+        }
+        primes_init_root(primes_lar,true);
+    }
     else
     {
         write_byte(255); // root value
@@ -638,7 +834,7 @@ int main(int argc, char **argv)
     _g_base = 10;
     _g_maxlength = -1;
     _g_prime_type = NULL;
-    _g_root = 0;
+    mpz_init(_g_root);
     if (argc < 2)
     {
         fprintf(stderr,"truncprimes <-p prime_type> "
@@ -671,12 +867,12 @@ int main(int argc, char **argv)
             _g_prime_type = optarg;
             break;
         case 'r': // root
-            if (!is_number(optarg))
+            if (mpz_set_str(_g_root,optarg,10) != 0
+             || mpz_cmp_ui(_g_root,0) < 0)
             {
-                fprintf(stderr,"root must be a number\n");
+                fprintf(stderr,"root must be a nonnegative integer\n");
                 return 0;
             }
-            _g_root = atoll(optarg);
             break;
         default:
             fprintf(stderr,"error parsing arguments\n");
@@ -697,13 +893,13 @@ int main(int argc, char **argv)
     }
     init_globals();
     if (strcmp(_g_prime_type,"r") == 0)
-        primes_r_init(_g_root);
+        primes_r_init();
     else if (strcmp(_g_prime_type,"l") == 0)
-        primes_l_init(_g_root);
+        primes_l_init();
     else if (strcmp(_g_prime_type,"lor") == 0)
-        primes_lor_init(_g_root);
+        primes_lor_init();
     else if (strcmp(_g_prime_type,"lar") == 0)
-        primes_lar_init(_g_root);
+        primes_lar_init();
     else
         fprintf(stderr,"invalid prime type: %s\n",_g_prime_type);
     // flush buffer and exit
@@ -714,6 +910,7 @@ int main(int argc, char **argv)
         exit(1);
     }
 #endif
+    mpz_clear(_g_root);
     clear_globals();
     return 0;
 }

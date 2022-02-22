@@ -55,8 +55,6 @@ Binary format for the recursion tree:
 #include <string.h>
 #include <unistd.h>
 
-#include "tp_util.h"
-
 /*
 Global constants and variables
 */
@@ -586,11 +584,11 @@ void primes_r_init()
 {
     if (mpz_cmp_ui(_g_root,0) > 0)
     {
-        if (!is_r_truncprime(_g_root,_g_base))
-        {
-            fprintf(stderr,"root is not right truncatable\n");
-            exit(0);
-        }
+//        if (!is_r_truncprime(_g_root,_g_base))
+//        {
+//            fprintf(stderr,"root is not right truncatable\n");
+//            exit(1);
+//        }
         primes_init_root(primes_r,false);
     }
     else
@@ -607,11 +605,11 @@ void primes_l_init()
 {
     if (mpz_cmp_ui(_g_root,0) > 0)
     {
-        if (!is_l_truncprime(_g_root,_g_base))
-        {
-            fprintf(stderr,"root is not left truncatable\n");
-            exit(0);
-        }
+//        if (!is_l_truncprime(_g_root,_g_base))
+//        {
+//            fprintf(stderr,"root is not left truncatable\n");
+//            exit(1);
+//        }
         primes_init_root(primes_l,false);
     }
     else
@@ -628,11 +626,11 @@ void primes_lor_init()
 {
     if (mpz_cmp_ui(_g_root,0) > 0)
     {
-        if (!is_lor_truncprime(_g_root,_g_base))
-        {
-            fprintf(stderr,"root is not left-or-right truncatable\n");
-            exit(0);
-        }
+//        if (!is_lor_truncprime(_g_root,_g_base))
+//        {
+//            fprintf(stderr,"root is not left-or-right truncatable\n");
+//            exit(1);
+//        }
         primes_init_root(primes_lor,true);
     }
     else
@@ -650,11 +648,11 @@ void primes_lar_init()
 {
     if (mpz_cmp_ui(_g_root,0) > 0)
     {
-        if (!is_lar_truncprime(_g_root,_g_base))
-        {
-            fprintf(stderr,"root is not left-and-right truncatable\n");
-            exit(0);
-        }
+//        if (!is_lar_truncprime(_g_root,_g_base))
+//        {
+//            fprintf(stderr,"root is not left-and-right truncatable\n");
+//            exit(1);
+//        }
         primes_init_root(primes_lar,true);
     }
     else

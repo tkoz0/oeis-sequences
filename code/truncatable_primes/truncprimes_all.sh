@@ -42,7 +42,7 @@ mkdir ./$DIR
 mkdir ./$DIR/tmp
 
 # generate tree up to given limit
-./truncprimes -p $PRIME_TYPE -b $BASE -l $SPLIT_LEN > ./$DIR/root.bin
+./tp_tree -p $PRIME_TYPE -b $BASE -l $SPLIT_LEN > ./$DIR/root.bin
 cat ./$DIR/root.bin | ./tree_convert -p $PRIME_TYPE -i $BASE > ./$DIR/root.txt
 echo computed $(cat ./$DIR/root.txt | wc -l) for recursion splitting
 
@@ -50,9 +50,9 @@ echo computed $(cat ./$DIR/root.txt | wc -l) for recursion splitting
 if [[ $PRIME_TYPE =~ 'lar' ]]
 then
     TMP=$(expr $SPLIT_LEN - 1)
-    cat ./$DIR/root.txt | python3 filter_numbers.py $BASE $SPLIT_LEN $TMP > ./$DIR/job_roots.txt
+    cat ./$DIR/root.txt | python3 num_len_filter.py $BASE $SPLIT_LEN $TMP > ./$DIR/job_roots.txt
 else
-    cat ./$DIR/root.txt | python3 filter_numbers.py $BASE $SPLIT_LEN > ./$DIR/job_roots.txt
+    cat ./$DIR/root.txt | python3 num_len_filter.py $BASE $SPLIT_LEN > ./$DIR/job_roots.txt
 fi
 
 # remove duplicate roots
@@ -75,7 +75,7 @@ cat ./$DIR/job_roots.txt \
         --joblog ./$DIR/jobs.log \
         --resume-failed \
         --bar \
-        ./truncprimes -p $PRIME_TYPE -b $BASE -r {} '>' ./$DIR/root_{}.bin \
+        ./tp_tree -p $PRIME_TYPE -b $BASE -r {} '>' ./$DIR/root_{}.bin \
     >> ./$DIR/parallel.stdout
 #        ./truncprimes -p $PRIME_TYPE -b $BASE -r {} '|' xz '>' ./$DIR/root_{}.bin.xz \
 

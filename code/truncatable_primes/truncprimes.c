@@ -23,7 +23,7 @@ Binary format for the recursion tree:
 
     supported up to base 255
     tree -> value [tree...] end
-    value - the branch taken, or zero byte(s) for the root
+    value - the branch taken
         r,l - 1 byte with the digit appended (always nonzero)
         lor - 2 bytes, 0 for append left or 1 for right, followed by the digit
         lar - 2 bytes, the appended digits, left then right
@@ -54,6 +54,8 @@ Binary format for the recursion tree:
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+
+#include "tp_util.h"
 
 /*
 Global constants and variables
@@ -573,159 +575,6 @@ void write_stats(uint32_t mult, bool header)
     mpz_clear(min_all);
     mpz_clear(max_all);
 #endif
-}
-
-/*
-Prime type checker functions
-*/
-
-bool is_r_truncprime(const mpz_t a, uint32_t b)
-{
-    assert(b > 1);
-    if (mpz_cmp_ui(a,0) <= 0)
-        return false;
-    mpz_t n;
-    bool ret = true;
-    mpz_init_set(n,a);
-    while (mpz_cmp_ui(n,0) > 0) // test primality and truncate right
-    {
-        if (!PRIME_TEST(n) || mpz_div_ui(n,n,b) == 0)
-        {
-            ret = false;
-            break;
-        }
-        mpz_div_ui(n,n,b);
-    }
-    mpz_clear(n);
-    return ret;
-}
-
-bool is_l_truncprime(const mpz_t a, uint32_t b)
-{
-    assert(b > 1);
-    if (mpz_cmp_ui(a,0) <= 0)
-        return false;
-    mpz_t n,d,p;
-    bool ret = true;
-    mpz_init_set(n,a);
-    uint32_t l = 0;
-    while (mpz_cmp_ui(n,0) > 0) // count digits
-        ++l, mpz_div_ui(n,n,b);
-    mpz_set(n,a);
-    mpz_init_set_ui(d,b);
-    mpz_init(p);
-    mpz_pow_ui(p,d,l-1); // value of most significant digit
-    while (mpz_cmp_ui(n,0) > 0) // truncate digits from left
-    {
-        // test primality (n) and ensure left digit (d) is nonzero
-        if (!PRIME_TEST(n) || (mpz_div(d,n,p), mpz_cmp_ui(d,0) == 0))
-        {
-            ret = false;
-            break;
-        }
-        mpz_submul_ui(n,p,mpz_get_ui(d)); // truncate
-        mpz_div_ui(p,p,b); // value of next most significant digit
-    }
-    mpz_clears(n,d,p,NULL);
-    return ret;
-}
-
-// recursive
-bool is_lor_truncprime(const mpz_t a, uint32_t b)
-{
-    assert(b > 1);
-    if (mpz_cmp_ui(a,b) < 0) // single digit
-        return PRIME_TEST(a);
-    if (!PRIME_TEST(a))
-        return false;
-    mpz_t tr,tl,d,p; // right/left truncations, division, power
-    mpz_inits(tr,tl,d,p,NULL);
-    uint32_t l = 0;
-    mpz_set(tr,a);
-    while (mpz_cmp_ui(tr,0) > 0) // count digits
-    {
-        ++l;
-        if (mpz_div_ui(tr,tr,b) == 0) // digits must be nonzero
-            return false;
-    }
-    // at start of each iteration
-    // - tr = a prime to start with
-    // - p = value of most significant digit
-    mpz_set(tr,a);
-    mpz_set_ui(d,b);
-    mpz_pow_ui(p,d,l-1);
-    bool ret;
-    for (;;) // loop to avoid recursion where only 1 recursive call is made
-    {
-        if (mpz_cmp_ui(tr,b) < 0) // reached single digit prime
-        {
-            ret = true;
-            break;
-        }
-        mpz_div(d,tr,p); // most significant digit
-        mpz_set(tl,tr);
-        mpz_submul_ui(tl,p,mpz_get_ui(d)); // set left truncated result
-        mpz_div_ui(tr,tr,b); // set right truncated result
-        mpz_div_ui(p,p,b);
-        bool trp = PRIME_TEST(tr);
-        bool tlp = PRIME_TEST(tl);
-        if (trp)
-        {
-            if (tlp)
-            {
-                ret = is_lor_truncprime(tr,b) || is_lor_truncprime(tl,b);
-                break;
-            }
-            else // use right truncation for next iteration
-                continue;
-        }
-        else
-        {
-            if (tlp) // use left truncation for next iteration
-            {
-                mpz_set(tr,tl);
-                continue;
-            }
-            else // cannot find parent prime
-            {
-                ret = false;
-                break;
-            }
-        }
-    }
-    mpz_clears(tr,tl,d,p,NULL);
-    return ret;
-}
-
-bool is_lar_truncprime(const mpz_t a, uint32_t b)
-{
-    assert(b > 1);
-    if (mpz_cmp_ui(a,0) <= 0)
-        return false;
-    mpz_t n,d,p;
-    bool ret = true;
-    mpz_init_set(n,a);
-    uint32_t l = 0;
-    while (mpz_cmp_ui(n,0) > 0) // count digits
-        ++l, mpz_div_ui(n,n,b);
-    mpz_set(n,a);
-    mpz_init_set_ui(d,b);
-    mpz_init(p);
-    mpz_pow_ui(p,d,l-1); // value of most significant digit
-    while (mpz_cmp_ui(n,0) > 0)
-    {
-        // test primality (n) and ensure left digit (d) is nonzero
-        if (!PRIME_TEST(n) || (mpz_div(d,n,p), mpz_cmp_ui(d,0) == 0))
-        {
-            ret = false;
-            break;
-        }
-        mpz_submul_ui(n,p,mpz_get_ui(d)); // truncate left
-        mpz_div_ui(n,n,b); // truncate right
-        mpz_div_ui(p,p,b*b); // shift most significant digit value by 2
-    }
-    mpz_clears(n,d,p,NULL);
-    return ret;
 }
 
 /*

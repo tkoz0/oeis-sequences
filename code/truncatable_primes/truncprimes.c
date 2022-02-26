@@ -56,6 +56,18 @@ Binary format for the recursion tree:
 #include <unistd.h>
 
 /*
+Ensure necessary requirements for preprocessor symbols
+*/
+
+#if defined (WRITE_TREE) && defined (WRITE_STATS)
+#error "cannot define both WRITE_TREE and WRITE_STATS"
+#endif
+
+#if ! defined (WRITE_TREE) && ! defined (WRITE_STATS)
+#error "must define either WRITE_TREE or WRITE_STATS"
+#endif
+
+/*
 Global constants and variables
 */
 
@@ -73,26 +85,32 @@ char *_g_prime_type;
 mpz_t _g_root;
 
 // buffer
-#define BUFFER_SIZE (1<<16)
+#define BUFFER_SIZE (1<<20)
 #ifdef WRITE_TREE
 char *_g_buffer;
 uint32_t _g_buffer_index;
 #endif
 
-// write a byte to the buffer, flush to stdout when full
+// write to stdout for tree mode
+static inline void write_buffer()
+{
+#ifdef WRITE_TREE
+    if (write(1,_g_buffer,_g_buffer_index) != _g_buffer_index)
+    {
+        fprintf(stderr,"unable to write output\n");
+        exit(1);
+    }
+    _g_buffer_index = 0;
+#endif
+}
+
+// write a byte to the buffer, flush when full
 static inline void write_byte(char b)
 {
 #ifdef WRITE_TREE
     _g_buffer[_g_buffer_index++] = b;
     if (_g_buffer_index == BUFFER_SIZE)
-    {
-        if (write(1,_g_buffer,BUFFER_SIZE) != BUFFER_SIZE)
-        {
-            fprintf(stderr,"unable to write output\n");
-            exit(1);
-        }
-        _g_buffer_index = 0;
-    }
+        write_buffer();
 #endif
 }
 
@@ -275,12 +293,26 @@ The caller is responsible for writing the value byte(s)
 #define PRIME_TEST(n) mpz_probab_prime_p(n,0)
 #define PRIME_TEST_CURR PRIME_TEST(STACK_CURR)
 
+// macros for hashing the tree
+#ifdef WRITE_TREE
+typedef void tp_hash_t;
+#endif
+#ifdef WRITE_STATS
+typedef uint64_t tp_hash_t;
+#endif
+#define HASH_INIT (mpz_get_ui(STACK_PREV)>>1)
+#define HASH_ADD_DIGIT(h,d) (127*(h) - (d))
+#define HASH_ADD_CHILD(h,c) (8191*(h) + (c))
+#define HASH_SWAP(h) (((h) >> 32) | ((h) << 32))
+#define HASH_UPDATE(h,d,c) (h^HASH_SWAP(HASH_ADD_CHILD(HASH_ADD_DIGIT(h,d),c)))
+
 // right truncatable (A024770 for base 10)
-void primes_r()
+tp_hash_t primes_r()
 {
     ++_g_depth;
 #ifdef WRITE_STATS
     uint32_t children = 0;
+    tp_hash_t hash = HASH_INIT, child_hash;
 #endif
     if (_g_depth <= _g_maxdepth)
     {
@@ -293,28 +325,34 @@ void primes_r()
             mpz_add_ui(STACK_CURR,STACK_CURR,1);
             if (PRIME_TEST_CURR)
             {
+                write_byte(d); // subtree
+#ifdef WRITE_STATS
+                child_hash =
+#endif
+                primes_r();
 #ifdef WRITE_STATS
                 ++children;
+                hash = HASH_UPDATE(hash,d,child_hash);
 #endif
-                write_byte(d); // subtree
-                primes_r();
             }
         }
     }
     --_g_depth;
+    write_byte(255); // end
 #ifdef WRITE_STATS
     ++_g_counts[_g_depth][children];
     update_min_max(children);
+    return hash;
 #endif
-    write_byte(255); // end
 }
 
 // left truncatable (A024785 for base 10)
-void primes_l()
+tp_hash_t primes_l()
 {
     ++_g_depth;
 #ifdef WRITE_STATS
     uint32_t children = 0;
+    tp_hash_t hash = HASH_INIT, child_hash;
 #endif
     if (_g_depth <= _g_maxdepth)
     {
@@ -326,28 +364,34 @@ void primes_l()
             mpz_add(STACK_CURR,STACK_CURR,POWER_CURR);
             if (PRIME_TEST_CURR)
             {
+                write_byte(d); // subtree
+#ifdef WRITE_STATS
+                child_hash =
+#endif
+                primes_l();
 #ifdef WRITE_STATS
                 ++children;
+                hash = HASH_UPDATE(hash,d,child_hash);
 #endif
-                write_byte(d); // subtree
-                primes_l();
             }
         }
     }
     --_g_depth;
+    write_byte(255); // end
 #ifdef WRITE_STATS
     ++_g_counts[_g_depth][children];
     update_min_max(children);
+    return hash;
 #endif
-    write_byte(255); // end
 }
 
 // left or right truncatable (A137812 for base 10)
-void primes_lor()
+tp_hash_t primes_lor()
 {
     ++_g_depth;
 #ifdef WRITE_STATS
     uint32_t children = 0;
+    tp_hash_t hash = HASH_INIT, child_hash;
 #endif
     if (_g_depth <= _g_maxdepth)
     {
@@ -359,12 +403,16 @@ void primes_lor()
             mpz_add(STACK_CURR,STACK_CURR,POWER_CURR);
             if (PRIME_TEST_CURR)
             {
-#ifdef WRITE_STATS
-                ++children;
-#endif
                 write_byte(0); // subtree
                 write_byte(d);
+#ifdef WRITE_STATS
+                child_hash =
+#endif
                 primes_lor();
+#ifdef WRITE_STATS
+                ++children;
+                hash = HASH_UPDATE(hash,d,child_hash);
+#endif
             }
         }
         // append right
@@ -374,32 +422,38 @@ void primes_lor()
             mpz_add_ui(STACK_CURR,STACK_CURR,1);
             if (PRIME_TEST_CURR)
             {
-#ifdef WRITE_STATS
-                ++children;
-#endif
                 write_byte(1); // subtree
                 write_byte(d);
+#ifdef WRITE_STATS
+                child_hash =
+#endif
                 primes_lor();
+#ifdef WRITE_STATS
+                ++children;
+                hash = HASH_UPDATE(hash,_g_base+d,child_hash);
+#endif
             }
         }
     }
     --_g_depth;
+    write_byte(255); // end
 #ifdef WRITE_STATS
     ++_g_counts[_g_depth][children];
     update_min_max(children);
+    return hash;
 #endif
-    write_byte(255); // end
 }
 
 // 2 digits at a time so use 2*_g_depth instead of _g_depth
 #define LAR_POWER_INDEX (_g_rlen + (_g_depth << 1) - 1)
 
 // left and right truncatable (A077390 for base 10)
-void primes_lar()
+tp_hash_t primes_lar()
 {
     ++_g_depth;
 #ifdef WRITE_STATS
     uint32_t children = 0;
+    tp_hash_t hash = HASH_INIT, child_hash;
 #endif
     if ((_g_depth<<1) <= _g_maxdepth)
     {
@@ -415,12 +469,16 @@ void primes_lar()
                 mpz_add_ui(STACK_CURR,STACK_CURR,1);
                 if (PRIME_TEST_CURR)
                 {
-#ifdef WRITE_STATS
-                    ++children;
-#endif
                     write_byte(dl); // subtree
                     write_byte(dr);
+#ifdef WRITE_STATS
+                    child_hash =
+#endif
                     primes_lar();
+#ifdef WRITE_STATS
+                    ++children;
+                    hash = HASH_UPDATE(hash,dl*_g_base+dr,child_hash);
+#endif
                 }
             }
             // backtrack right digit increment
@@ -428,11 +486,12 @@ void primes_lar()
         }
     }
     --_g_depth;
+    write_byte(255); // end
 #ifdef WRITE_STATS
     ++_g_counts[_g_depth][children];
     update_min_max(children);
+    return hash;
 #endif
-    write_byte(255); // end
 }
 
 /*
@@ -441,7 +500,8 @@ Recursion setup functions
 
 // write the full tree given a root value
 // set byte2 for cases where tree values are 2 bytes
-void primes_init_root(void (*fptr)(), bool byte2)
+// returns hash for the entire tree
+tp_hash_t primes_init_root(tp_hash_t (*fptr)(), bool byte2)
 {
     write_byte(255); // root value
     if (byte2) // 2nd byte for root value
@@ -458,6 +518,9 @@ void primes_init_root(void (*fptr)(), bool byte2)
     }
     mpz_clear(root);
     _g_maxdepth = _g_maxlength - _g_rlen;
+#ifdef WRITE_STATS
+    return
+#endif
     fptr(); // writes subtrees and end
 }
 
@@ -465,10 +528,18 @@ void primes_init_root(void (*fptr)(), bool byte2)
 // specify -1 for byte2, otherwise specify the first byte value
 // for left or right truncatable primes, it specifies side to append to
 // for left and right truncatable primes, it should be 0
-void primes_init_1digit(void (*fptr)(), int byte2)
+// updates the hash value with the subtrees and returns it
+tp_hash_t primes_init_1digit(tp_hash_t (*fptr)(), int byte2, tp_hash_t *h0)
 {
+#ifdef WRITE_STATS
+    tp_hash_t h = *h0, c;
+#endif
     if (_g_maxlength < 1)
-        return;
+        return
+#ifdef WRITE_STATS
+        h
+#endif
+        ;
     for (uint64_t root = 2; root < _g_base; ++root)
     {
         mpz_set_ui(_g_stack[0],root);
@@ -480,17 +551,34 @@ void primes_init_1digit(void (*fptr)(), int byte2)
             if (byte2 != -1)
                 write_byte(byte2);
             write_byte(root); // root
+#ifdef WRITE_STATS
+            c =
+#endif
             fptr(); // subtrees and end
+#ifdef WRITE_STATS
+            h = HASH_UPDATE(h,root,c);
+#endif
         }
     }
+#ifdef WRITE_STATS
+    return h;
+#endif
 }
 
 // write subtrees beginning with 2 digits (2 bytes for root values)
 // only used for left and right truncatable primes
-void primes_init_2digit(void (*fptr)())
+// updates the hash value with the subtrees and returns it
+tp_hash_t primes_init_2digit(tp_hash_t (*fptr)(), tp_hash_t *h0)
 {
+#ifdef WRITE_STATS
+    tp_hash_t h = *h0, c;
+#endif
     if (_g_maxlength < 2)
-        return;
+        return
+#ifdef WRITE_STATS
+        h
+#endif
+        ;
     for (uint64_t rootl = 1; rootl < _g_base; ++rootl)
         for (uint64_t rootr = 0; rootr < _g_base; ++rootr)
         {
@@ -502,9 +590,18 @@ void primes_init_2digit(void (*fptr)())
             {
                 write_byte(rootl); // root
                 write_byte(rootr);
+#ifdef WRITE_STATS
+                c =
+#endif
                 fptr(); // subtrees and end
+#ifdef WRITE_STATS
+                h = HASH_UPDATE(h,rootl*_g_base+rootr,c);
+#endif
             }
         }
+#ifdef WRITE_STATS
+    return h;
+#endif
 }
 
 /*
@@ -575,13 +672,30 @@ void write_stats(uint32_t mult, bool header)
 #endif
 }
 
+static inline void write_hash(tp_hash_t *hash)
+{
+#ifdef WRITE_STATS
+    printf("# hash = %lu\n",*hash);
+#endif
+}
+
 /*
 Recursion initialization functions
 */
 
+#ifdef WRITE_TREE
+#define HASH_ADDR NULL
+#endif
+#ifdef WRITE_STATS
+#define HASH_ADDR (&hash)
+#endif
+
 // right truncatable (A024770 for base 10)
 void primes_r_init()
 {
+#ifdef WRITE_STATS
+    tp_hash_t hash = 0;
+#endif
     if (mpz_cmp_ui(_g_root,0) > 0)
     {
 //        if (!is_r_truncprime(_g_root,_g_base))
@@ -589,20 +703,30 @@ void primes_r_init()
 //            fprintf(stderr,"root is not right truncatable\n");
 //            exit(1);
 //        }
+#ifdef WRITE_STATS
+        hash =
+#endif
         primes_init_root(primes_r,false);
     }
     else
     {
         write_byte(255); // root value
-        primes_init_1digit(primes_r,-1);
+#ifdef WRITE_STATS
+        hash =
+#endif
+        primes_init_1digit(primes_r,-1,HASH_ADDR);
         write_byte(255); // end
     }
     write_stats(1,true);
+    write_hash(HASH_ADDR);
 }
 
 // left truncatable (A024785 for base 10)
 void primes_l_init()
 {
+#ifdef WRITE_STATS
+    tp_hash_t hash = 0;
+#endif
     if (mpz_cmp_ui(_g_root,0) > 0)
     {
 //        if (!is_l_truncprime(_g_root,_g_base))
@@ -610,20 +734,30 @@ void primes_l_init()
 //            fprintf(stderr,"root is not left truncatable\n");
 //            exit(1);
 //        }
+#ifdef WRITE_STATS
+        hash =
+#endif
         primes_init_root(primes_l,false);
     }
     else
     {
         write_byte(255); // root value
-        primes_init_1digit(primes_l,-1);
+#ifdef WRITE_STATS
+        hash =
+#endif
+        primes_init_1digit(primes_l,-1,HASH_ADDR);
         write_byte(255); // end
     }
     write_stats(1,true);
+    write_hash(HASH_ADDR);
 }
 
 // left or right truncatable (A137812 for base 10)
 void primes_lor_init()
 {
+#ifdef WRITE_STATS
+    tp_hash_t hash = 0;
+#endif
     if (mpz_cmp_ui(_g_root,0) > 0)
     {
 //        if (!is_lor_truncprime(_g_root,_g_base))
@@ -631,21 +765,31 @@ void primes_lor_init()
 //            fprintf(stderr,"root is not left-or-right truncatable\n");
 //            exit(1);
 //        }
+#ifdef WRITE_STATS
+        hash =
+#endif
         primes_init_root(primes_lor,true);
     }
     else
     {
         write_byte(255); // root value
         write_byte(255);
-        primes_init_1digit(primes_lor,0);
+#ifdef WRITE_STATS
+        hash =
+#endif
+        primes_init_1digit(primes_lor,0,HASH_ADDR);
         write_byte(255); // end
     }
     write_stats(1,true);
+    write_hash(HASH_ADDR);
 }
 
 // left and right truncatable (A077390 for base 10)
 void primes_lar_init()
 {
+#ifdef WRITE_STATS
+    tp_hash_t hash = 0;
+#endif
     if (mpz_cmp_ui(_g_root,0) > 0)
     {
 //        if (!is_lar_truncprime(_g_root,_g_base))
@@ -653,22 +797,31 @@ void primes_lar_init()
 //            fprintf(stderr,"root is not left-and-right truncatable\n");
 //            exit(1);
 //        }
+#ifdef WRITE_STATS
+        hash =
+#endif
         primes_init_root(primes_lar,true);
+        write_stats(1,true);
     }
     else
     {
         write_byte(255); // root value
         write_byte(255);
-        primes_init_1digit(primes_lar,0);
+#ifdef WRITE_STATS
+        hash =
+#endif
+        primes_init_1digit(primes_lar,0,HASH_ADDR);
         write_stats(2,true); // odd lengths
 #ifdef WRITE_STATS
         clear_globals();
         init_globals();
+        hash =
 #endif
-        primes_init_2digit(primes_lar);
+        primes_init_2digit(primes_lar,HASH_ADDR);
         write_stats(2,false); // even lengths
         write_byte(255); // end
     }
+    write_hash(HASH_ADDR);
 }
 
 /*
@@ -750,13 +903,7 @@ int main(int argc, char **argv)
     else
         fprintf(stderr,"invalid prime type: %s\n",_g_prime_type);
     // flush buffer and exit
-#ifdef WRITE_TREE
-    if (write(1,_g_buffer,_g_buffer_index) != _g_buffer_index)
-    {
-        fprintf(stderr,"unable to write output\n");
-        exit(1);
-    }
-#endif
+    write_buffer();
     mpz_clear(_g_root);
     clear_globals();
     return 0;

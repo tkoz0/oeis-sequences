@@ -19,7 +19,7 @@ Generates truncatable primes.
     this option is intended for recursing subtrees on different threads
     it is not checked if root is a valid prime of the given type
 
-Binary format for the recursion tree:
+Binary format for the recursion tree (-DWRITE_TREE):
 
     supported up to base 255
     tree -> value [tree...] end
@@ -32,7 +32,7 @@ Binary format for the recursion tree:
     end - a single 255 byte
     note that this format does not contain the base or root value
     the root value is 255 (1 or 2 bytes depending on prime type)
-    
+
     pseudocode showing how to read this format
     next(bytes): extracts next byte from the stream
     peek(bytes): reads next byte from stream without extracting
@@ -42,6 +42,57 @@ Binary format for the recursion tree:
             read_tree(bytes)
         end <- next(bytes)
         assert(end == 255)
+
+Output format for statistics (-DWRITE_STATS):
+
+    Comment lines start with #
+
+    Begins with these 4 lines (value between < > are taken from arguments):
+    # prime_type = <prime_type>
+    # base = <base>
+    # root = <root>
+    # max_length = <max_length>
+
+    May have this 5th line (for left-or-right truncatable primes):
+    # NOTE: counts are not applicable
+
+    Next is the CSV table, header is:
+    digits,all,0,1,...,<max_children>
+    <max_children> is determined from the base and prime type
+    This splits the primes into based on how many child nodes they have
+
+    For each nonzero digit length with at least 1 prime, 3 lines:
+    - counts line (number of primes found)
+    - min line (minimum of primes found)
+    - max line (maximum of primes found)
+
+    Finally, the hash line which can be used for verifying computation:
+    # hash = <hash>
+
+Hashing function (-DWRITE_STATS):
+
+    Each node has a hash computed as follows (all calculations are 64 bit):
+    node.value = the prime number of this node
+    node.children = a list of child nodes
+
+    rot32(n): return (n >> 32) | (n << 32)
+    hash(node):
+        h = (lower 64 bits of node.value) >> 1
+        for child in node.children:
+            d = path number for digit append
+            c = hash(child)
+            h ^= rot32(8191*(127*h - d) + c)
+        return h
+
+    The hash value output at the end is the hash of the root node
+    
+    The path numbers for digit appending (d above) are:
+    - right/left truncatable: the digit
+    - left-or-right truncatable:
+      - the digit for left append
+      - base + the digit for right append
+    - left-and-right truncatable: (left digit)*base + (right digit)
+
 */
 
 #include <assert.h>

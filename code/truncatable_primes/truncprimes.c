@@ -301,10 +301,10 @@ typedef void tp_hash_t;
 typedef uint64_t tp_hash_t;
 #endif
 #define HASH_INIT (mpz_get_ui(STACK_PREV)>>1)
-#define HASH_ADD_DIGIT(h,d) (127*(h) - (d))
-#define HASH_ADD_CHILD(h,c) (8191*(h) + (c))
+#define HASH_DIGIT(h,d) (127*(h) - (d))
+#define HASH_CHILD(h,c) (8191*(h) + (c))
 #define HASH_SWAP(h) (((h) >> 32) | ((h) << 32))
-#define HASH_UPDATE(h,d,c) (h^HASH_SWAP(HASH_ADD_CHILD(HASH_ADD_DIGIT(h,d),c)))
+#define HASH_UPDATE(h,d,c) ((h)^HASH_SWAP(HASH_CHILD(HASH_DIGIT(h,d),c)))
 
 // right truncatable (A024770 for base 10)
 tp_hash_t primes_r()
@@ -634,7 +634,6 @@ void write_stats(uint32_t mult, bool header)
     mpz_init(max_all);
     for (uint32_t i = 0; i < _g_slen; ++i)
     {
-        printf("%u,",_g_rlen+i*mult);
         count_all = 0;
         mpz_set_ui(min_all,0);
         mpz_set_ui(max_all,0);
@@ -648,7 +647,9 @@ void write_stats(uint32_t mult, bool header)
             if (mpz_cmp(max_all,_g_pmax[i][k]) < 0)
                 mpz_set(max_all,_g_pmax[i][k]);
         }
-        printf("%lu",count_all);
+        if (count_all == 0) // skip rows with no primes
+            continue;
+        printf("%u,%lu",_g_rlen+i*mult,count_all);
         for (uint32_t k = 0; k < _g_max_children; ++k)
             printf(",%lu",_g_counts[i][k]);
         printf("\n,");
@@ -801,7 +802,7 @@ void primes_lar_init()
         hash =
 #endif
         primes_init_root(primes_lar,true);
-        write_stats(1,true);
+        write_stats(2,true);
     }
     else
     {

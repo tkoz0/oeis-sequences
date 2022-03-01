@@ -55,7 +55,7 @@ def hash_update(h: int, d: int, c: int) -> int:
 Recursive functions return tuple (tree,bytes,hash)
 '''
 
-# node is (length,number) and list of children
+# node is (length,number,hash) and list of children
 TPNode = Tuple[int,int,int] # len,num,hash(subtree)
 TPTree = Tuple[TPNode,Dict[int,'TPTree']]
 TPRet = Tuple[TPTree,bytes,int]
@@ -185,8 +185,8 @@ def print_stats(stats: TPStats, args: argparse.Namespace):
         max_children *= 2
     if args.prime_type == 'lar':
         max_children *= args.base
-        len_order = sorted(filter(lambda x : x % 2 == 1, stats.counts.keys())) \
-                + sorted(filter(lambda x : x % 2 == 0, stats.counts.keys()))
+        len_order = sorted(filter(lambda x: x % 2 == 1, stats.counts.keys())) \
+                + sorted(filter(lambda x: x % 2 == 0, stats.counts.keys()))
     else:
         len_order = sorted(stats.counts.keys())
     print('digits,all'+''.join(f',{k}' for k in range(max_children)))
@@ -202,7 +202,7 @@ def print_stats(stats: TPStats, args: argparse.Namespace):
             for i in get_values(max_children,stats.pmin[l])))
         print(f',{all_max}'+''.join(f',{i}'
             for i in get_values(max_children,stats.pmax[l])))
-    print(f'# hash = {stats.hashes[0]}')
+    #print(f'# hash = {stats.hashes[0]}')
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
@@ -235,6 +235,7 @@ if __name__ == '__main__':
     stats = TPStats()
     tp_tree_stats(tptree,stats)
     print_stats(stats,args)
+    print(f'# hash = {tptree[0][2]}')
     #print('hash bit distribution =',stats.get_hash_bit_distribution())
     #while True:
     #    m = int(input())

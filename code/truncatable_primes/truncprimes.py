@@ -44,12 +44,12 @@ def hash_init(num: int) -> int:
     return (num%2**64)//2
 
 # rotate 32 bits
-def swap_halves(num: int) -> int:
-    return ((num >> 32) | (num << 32)) & (2**64-1)
+def hash_rot(num: int) -> int:
+    return ((num >> 45) | (num << 19)) & (2**64-1)
 
 # mix in the new values to scramble the hash value
 def hash_update(h: int, d: int, c: int) -> int:
-    return h ^ swap_halves((8191*(127*h-d)+c)%2**64)
+    return h ^ hash_rot((8191*(127*h-d)+c)%2**64)
 
 '''
 Recursive functions return tuple (tree,bytes,hash)

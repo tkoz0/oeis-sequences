@@ -352,10 +352,8 @@ typedef void tp_hash_t;
 typedef uint64_t tp_hash_t;
 #endif
 #define HASH_INIT (mpz_get_ui(STACK_PREV)>>1)
-#define HASH_DIGIT(h,d) (127*(h) - (d))
-#define HASH_CHILD(h,c) (8191*(h) + (c))
-#define HASH_SWAP(h) (((h) >> 32) | ((h) << 32))
-#define HASH_UPDATE(h,d,c) ((h)^HASH_SWAP(HASH_CHILD(HASH_DIGIT(h,d),c)))
+#define HASH_ROT(h) (((h) >> 45) | ((h) << 19))
+#define HASH_UPDATE(h,d,c) ((h)^HASH_ROT(8191*(127*(h)-(d))+(c)))
 
 // right truncatable (A024770 for base 10)
 tp_hash_t primes_r()

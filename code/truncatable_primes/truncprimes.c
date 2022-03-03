@@ -75,13 +75,13 @@ Hashing function (-DWRITE_STATS):
     node.value = the prime number of this node
     node.children = a list of child nodes
 
-    rot32(n): return (n >> 32) | (n << 32)
+    rotate(n): return (n >> 45) | (n << 19)
     hash(node):
         h = (lower 64 bits of node.value) >> 1
         for child in node.children:
             d = path number for digit append
             c = hash(child)
-            h ^= rot32(8191*(127*h - d) + c)
+            h ^= rotate(8191*(127*h - d) + c)
         return h
 
     The hash value output at the end is the hash of the root node

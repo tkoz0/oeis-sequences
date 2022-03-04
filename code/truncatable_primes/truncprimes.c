@@ -4,8 +4,17 @@ Generates truncatable primes.
 -b base (--base base)
     number base to use for digit appends/truncations
     valid range is 2-255, default is 10
+    no plan to expand this restriction as even for right truncatable primes
+    it already gets very expensive to compute the full tree for base 100
 -l max_length (--max_length max_length)
-    maximum length in digits to output, default is unlimited
+    maximum length in digits to compute, default is unlimited (2^32-1)
+-m min_length (--min_length min_length)
+    minimum length in digits to output to extra file
+    default is infinite (2^32-1) so none are output
+-n nums_file (--nums_file nums_file)
+    if specified, the numbers with length at least that provided with -m
+    will be output to nums_file, one per line, written in base 10
+    numbers are written in pre order
 -p type (--prime_type type)
     specify type of primes, currently supported are
     r - right truncatable (A024770 for base 10)
@@ -14,10 +23,14 @@ Generates truncatable primes.
     lar - left and right truncatable (A077390 for base 10)
     note that duplicates numbers may be included for "lor"
 -r root (--root root)
-    root number for recursion, as a 64 bit integer
+    root number for recursion, arbitrary length supported
     default is 0 (for recursing the entire tree)
     this option is intended for recursing subtrees on different threads
     it is not checked if root is a valid prime of the given type
+
+The main data (either the tree in binary format or the statistics in csv format
+with comment lines) is written to stdout. The extra file, if specified, will
+contain the largest numbers computed, one per line, in base 10.
 
 Binary format for the recursion tree (-DWRITE_TREE):
 
@@ -97,6 +110,7 @@ Hashing function (-DWRITE_STATS):
 
 #include <assert.h>
 #include <ctype.h>
+#include <fcntl.h>
 #include <getopt.h>
 #include <gmp.h>
 #include <stdbool.h>
@@ -123,11 +137,13 @@ Global constants and variables
 */
 
 // command line arguments
-const char *OPTION_STRING = "b:l:p:r:";
+const char *OPTION_STRING = "b:l:m:n:p:r:";
 const struct option OPTION_LONG[] =
 {
     { "base",       required_argument, 0, 'b' },
     { "max_length", required_argument, 0, 'l' },
+    { "min_length", required_argument, 0, 'm' },
+    { "num_file",   required_argument, 0, 'n' },
     { "prime_type", required_argument, 0, 'p' },
     { "root",       required_argument, 0, 'r' },
     { 0,            0,                 0, 0   }
@@ -135,8 +151,14 @@ const struct option OPTION_LONG[] =
 char *_g_prime_type;
 mpz_t _g_root;
 
+// for nums file, largest numbers found are output
+uint32_t _g_minlength;
+char *_g_num_filename;
+FILE *_g_num_file;
+#define BUFFER_SIZE_NUMS (1<<18)
+
 // buffer
-#define BUFFER_SIZE (1<<20)
+#define BUFFER_SIZE_BYTES (1<<18)
 #ifdef WRITE_TREE
 char *_g_buffer;
 uint32_t _g_buffer_index;
@@ -160,7 +182,7 @@ static inline void write_byte(char b)
 {
 #ifdef WRITE_TREE
     _g_buffer[_g_buffer_index++] = b;
-    if (_g_buffer_index == BUFFER_SIZE)
+    if (_g_buffer_index == BUFFER_SIZE_BYTES)
         write_buffer();
 #endif
 }
@@ -267,7 +289,7 @@ bool is_number(const char *s)
 void init_globals()
 {
 #ifdef WRITE_TREE
-    _g_buffer = malloc(BUFFER_SIZE);
+    _g_buffer = malloc(BUFFER_SIZE_BYTES);
     _g_buffer_index = 0;
 #endif
 #ifdef WRITE_STATS
@@ -355,9 +377,21 @@ typedef uint64_t tp_hash_t;
 #define HASH_ROT(h) (((h) >> 45) | ((h) << 19))
 #define HASH_UPDATE(h,d,c) ((h)^HASH_ROT(8191*(127*(h)-(d))+(c)))
 
+// for nums file output, writes numbers with length >= _g_minlength
+#define LONG_ENOUGH(mul) (_g_rlen + (mul)*_g_depth >= _g_minlength)
+static inline void write_num(uint32_t mul)
+{
+    if (LONG_ENOUGH(mul) && _g_num_file)
+    {
+        mpz_out_str(_g_num_file,10,STACK_CURR);
+        fprintf(_g_num_file,"\n");
+    }
+}
+
 // right truncatable (A024770 for base 10)
 tp_hash_t primes_r()
 {
+    write_num(1);
     ++_g_depth;
 #ifdef WRITE_STATS
     uint32_t children = 0;
@@ -398,6 +432,7 @@ tp_hash_t primes_r()
 // left truncatable (A024785 for base 10)
 tp_hash_t primes_l()
 {
+    write_num(1);
     ++_g_depth;
 #ifdef WRITE_STATS
     uint32_t children = 0;
@@ -437,6 +472,7 @@ tp_hash_t primes_l()
 // left or right truncatable (A137812 for base 10)
 tp_hash_t primes_lor()
 {
+    write_num(1);
     ++_g_depth;
 #ifdef WRITE_STATS
     uint32_t children = 0;
@@ -499,6 +535,7 @@ tp_hash_t primes_lor()
 // left and right truncatable (A077390 for base 10)
 tp_hash_t primes_lar()
 {
+    write_num(2);
     ++_g_depth;
 #ifdef WRITE_STATS
     uint32_t children = 0;
@@ -883,12 +920,15 @@ int main(int argc, char **argv)
     // set default values
     _g_base = 10;
     _g_maxlength = -1;
+    _g_minlength = -1;
+    _g_num_file = NULL;
+    _g_num_filename = NULL;
     _g_prime_type = NULL;
     mpz_init(_g_root);
     if (argc < 2)
     {
-        fprintf(stderr,"truncprimes <-p prime_type> "
-                        "[-b base] [-l max_length] [-r root]\n");
+        fprintf(stderr,"truncprimes <-p prime_type> [-b base] [-l max_length]"
+                "[-m min_length] [-n nums_file] [-r root]\n");
         return 0;
     }
     // read options
@@ -912,6 +952,17 @@ int main(int argc, char **argv)
                 return 0;
             }
             _g_maxlength = atoi(optarg);
+            break;
+        case 'm': // min length
+            if (!is_number(optarg))
+            {
+                fprintf(stderr,"min length must be a number\n");
+                return 0;
+            }
+            _g_minlength = atoi(optarg);
+            break;
+        case 'n': // num file
+            _g_num_filename = optarg;
             break;
         case 'p': // prime type
             _g_prime_type = optarg;
@@ -941,6 +992,20 @@ int main(int argc, char **argv)
         fprintf(stderr,"must specify prime type\n");
         return 0;
     }
+    if (_g_num_filename)
+    {
+        _g_num_file = fopen(_g_num_filename,"w");
+        if (!_g_num_file)
+        {
+            fprintf(stderr,"error opening nums file\n");
+            return 1;
+        }
+        if (setvbuf(_g_num_file,NULL,_IOFBF,BUFFER_SIZE_NUMS) == -1)
+        {
+            fprintf(stderr,"error setting nums file buffer\n");
+            return 1;
+        }
+    }
     init_globals();
     if (strcmp(_g_prime_type,"r") == 0)
         primes_r_init();
@@ -954,6 +1019,8 @@ int main(int argc, char **argv)
         fprintf(stderr,"invalid prime type: %s\n",_g_prime_type);
     // flush buffer and exit
     write_buffer();
+    if (_g_num_file)
+        fclose(_g_num_file);
     mpz_clear(_g_root);
     clear_globals();
     return 0;

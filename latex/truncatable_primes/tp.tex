@@ -1,0 +1,118 @@
+
+\documentclass[12pt]{article}
+
+\usepackage{amsfonts}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage[backend=bibtex]{biblatex}
+\usepackage{color}
+\usepackage{fullpage}
+%\usepackage{geometry}
+\usepackage{mathrsfs}
+\usepackage{mathtools}
+\usepackage{parskip}
+
+\addbibresource{tp.bib}
+
+\newcommand{\ds}{\displaystyle}
+
+\begin{document}
+
+\title{Truncatable Primes}
+\author{TKoz}
+\date{\today}
+\maketitle
+
+\begin{abstract}
+here is some stupid text to take up an entire line before something actually gets written for this part so that the structure and layout of the latex document can be seen a bit better while experimenting with stuff
+\end{abstract}
+
+\section{Introduction}
+
+In number theory, truncatable primes are prime numbers such that some of their digits can be removed in succession, producing a sequence of primes until ending with, typically, a one digit prime. They can be defined for various number bases. In base 10, the number 2393 is a right truncatable prime because it is prime and we can remove a digit from the right one at a time to produce 239, 23, and 2, which are all prime. The number 1223 is a left truncatable prime because itself and 223, 23, and 3 are all prime.
+
+The prime number theorem can be used to come up with a way to estimate how many truncatable primes there are in a given base, leading to the conjecture that there are finitely many in all bases for each of the types considered here. This can be proven for a specific base by computing all of them, but it has not been proven to be true fol all bases.
+
+\section{Definitions}
+
+Note that all numbers are integers unless otherwise stated. In the following sections, basic definitions are given for some relevant mathematics used and then the four truncatable prime types considered are defined.
+
+\subsection{Basics}
+
+\textbf{Definition:} Euler's totient function, $\phi(n)$, defined for $n\geq1$, is how many numbers $1\leq x\leq n$ satisfy $\gcd(x,n)=1$.
+
+\textbf{Definition:} The prime counting function, $\pi(n)$, defined for $n\geq1$, is how many prime numbers are $\leq n$.
+
+\textbf{Definition:} A $d$ digit number ($d\geq1$) in base $b$ ($b\geq2$) can be expressed as:
+$$ a_{d-1}b^{d-1} + a_{d-2}b^{d-2} + \ldots + a_1b^1 + a_0b^0 $$
+Where $0<a_{d-1}<b$ and $0\leq a_i<b$ for $0\leq i\leq d-2$. The $a_i$ values are the digits of the number and their associated $b^i$ is the place value. The rightmost digit is $a_0$ and the leftmost digit is $a_{d-1}$. The number written in standard form in base $b$ is $a_{d-1}a_{d-2}\ldots a_1a_0$.
+
+\subsection{Prime Types}
+
+The truncatable prime types can be defined recursively. A number $n$ is a truncatable prime iff it is prime and its truncation (depending on the type) is also a truncatable prime. This produces a path of primes down to a base case.
+
+\textbf{Right Truncatable:} Let $n$ be a $d$ digit prime in base $b$ represented with digits $a_{d-1}a_{d-2}\ldots a_1a_0$. Then $n$ if a right truncatable prime iff $d=1$ or $a_{d-1}a_{d-2}\ldots a_2a_1$ is a right truncatable prime (equal to $\lfloor n/b\rfloor$, the rightmost digit is truncated).
+
+\textbf{Left Truncatable:} Let $n$ be a $d$ digit prime in base $b$ represented with digits $a_{d-1}a_{d-2}\ldots a_1a_0$. Then $n$ is a left truncatable prime iff $d=1$ or $a_{d-2}a_{d-3}\ldots a_1a_0$ is a left truncatable prime (equal to $n-a_{d-1}b^{d-1}$, the leftmost digit is truncated).
+
+\textbf{Left-And-Right Truncatable:} Let $n$ be a $d$ digit prime in base $b$ represented with digits $a_{d-1}a_{d-2}\ldots a_1a_0$. Then $n$ is a left-and-right truncatable prime iff $d=1$, $d=2$, or $a_{d-2}a_{d-3}\ldots a_2a_1$ is a left-and-right truncatable prime (equal to $\lfloor(n-a_{d-1}b^{d-1})/b\rfloor$, both the leftmost and rightmost digits are truncated).
+
+\textbf{Left-Or-Right Truncatable:} Let $n$ be a $d$ digit prime in base $b$ represented with digits $a_{d-1}a_{d-2}\ldots a_1a_0$. Then $n$ is a left-or-right truncatable prime iff $d=1$ or $a_{d-2}a_{d-3}\ldots a_1a_0$ is a left-or-right truncatable prime (left digit truncated) or $a_{d-1}a_{d-2}\ldots a_2a_1$ is a left-or-right truncatable prime (right digit truncated).
+
+\section{Primality Testing}
+
+TODO Using BPSW
+
+\section{Algorithms}
+
+TODO prove the trees contain all primes only once (except for lor)
+
+\section{Estimation Formulas}
+
+The recursion tree of truncatable primes in base $b$ can be seen as layers where each layer represents the primes of a particular digit length. If we know how many $d$ digit truncatable primes there are, then we can use probability to estimate how many $d+1$ digit truncatable primes there will be (or $d+2$ digit primes for left-and-right truncatable). Once we have this result, we can take the sum of subsequent layers to find an estimate of how many more truncatable primes will be computed.
+
+\subsection{The Next Layer of Primes}
+
+According to the prime number theorem, $\pi(x)\sim x/\ln(x)$ as $x\to\infty$. This tells us that the average gap between two primes below $x$ is $\ln(x)$. The $d$ digit numbers in base $b$ are in the range $[b^{d-1},b^d)$. There are approximately $\pi(b^d)-\pi(b^{d-1})$ primes in this range. The ratio of primes to all numbers in this interval is:
+\begin{equation}
+\frac{\pi(b^d)-\pi(b^{d-1})}{b^d-b^{d-1}} \approx \frac{b^d/[d\ln(b)]-b^{d-1}/[(d-1)\ln(b)]}{b^d-b^{d-1}} = \frac{b/d-1/(d-1)}{(b-1)\ln(b)}
+\end{equation}
+Without the $\ln(b)$ part, we can do the following to simplify:
+\begin{equation}
+\frac{b/d-1/(d-1)}{(b-1)} = \frac{b(d-1)-d}{(b-1)d(d-1)} = \frac{b-\frac{d}{d-1}}{(b-1)d} = \frac{b-1+\frac{(d-1)-d}{d-1}}{(b-1)d} = \frac{1}{d}-\frac{1}{(b-1)d(d-1)}
+\end{equation}
+Here, we expect $1/[(b-1)d(d-1)]$ to be much smaller than $1/d$ in general as the parameters (particularly the base $b$) grow, so we can approximate the ratio of $d$ digit primes in base $b$ as $1/[d\ln(b)]$. Let $P(b,d)$ be the probability that a $d$ digit number in base $b$ is prime. We estimate $P(b,d)=1/[d\ln(b)]$.
+
+Let $C_R(b,d)$ be the number of $d$ digit right truncatable primes in base $b$. Similarly, let $C_L(b,d)$ be the same for left truncatable, $C_{L|R}(b,d)$ for left-or-right truncatable, and $C_{L\&R}(b,d)$ for left-and-right truncatable. Suppose we start with a $d$ digit prime, $n$, in base $b$.
+
+For right truncatable primes, we compute new ones of the form $bn+r$ where $0\leq r<b$. Since these $b$ numbers are uniformly distributed modulo $b$, we form about $P(b,d+1)b$ new primes. This gives us the following estimate:
+\begin{equation}
+C_R(b,d+1) \approx C_R(b,d)P(b,d+1)b
+\end{equation}
+
+For left truncatable primes, our new form is $lb^d+n$ for $1\leq l<b$. These numbers are not randomly distributed this time. They will be coprime to $b$ (except for prime factors of $b$, but this is only for a few small numbers). We need to determine the probability $x$ is prime given that $\gcd(x,b)=1$. If $x$ is prime, then $\gcd(x,b)=1$ (except when $x$ is a prime factor of $b$) so we just have $P(b,d+1)$ for the probability $x$ is prime and $\gcd(x,b)=1$. We divide it by the probability that $\gcd(x,b)=1$, which is $\phi(b)/b$. This gives us about $(b-1)P(b,d+1)b/\phi(b)$ new primes. We form the following estimate:
+\begin{equation}
+C_L(b,d+1) \approx C_L(b,d)P(b,d+1)\frac{b(b-1)}{\phi(b)}
+\end{equation}
+
+For left-or-right truncatable primes, we combine the results for right truncatable and left truncatable primes. This estimation includes duplicates so it can be used to estimate how many primes are computed with depth first search where duplicates are visited. The estimate is:
+\begin{equation}
+C_{L|R}(b,d+1) \approx C_{L|R}(b,d)P(b,d+1)b\left(1+\frac{b-1}{\phi(b)}\right)
+\end{equation}
+
+Finally, for left-and-right truncatable primes, we form new ones of the form $lb^{d+1}+bn+r$ where $1\leq l<b$ and $0\leq r<b$. Similar to right truncatable primes, these are uniformly distributed modulo $b$, so we get a similar estimate of:
+\begin{equation}
+C_{L\&R}(b,d+2) \approx C_{L\&R}(b,d)P(b,d+2)b(b-1)
+\end{equation}
+
+\subsection{Summing Subsequent Layers}
+
+\section{Results}
+
+\section{Further Work}
+
+Come up with a way to estimate $C_{L|R}$ without duplicates
+
+\printbibliography[title={References}]
+
+\end{document}

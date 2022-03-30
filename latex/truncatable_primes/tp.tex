@@ -1,6 +1,7 @@
 
 \documentclass[12pt]{article}
 
+\usepackage{algpseudocode}
 \usepackage{amsfonts}
 \usepackage{amsmath}
 \usepackage{amssymb}
@@ -11,6 +12,7 @@
 \usepackage{mathrsfs}
 \usepackage{mathtools}
 \usepackage{parskip}
+\usepackage{tikz}
 
 \addbibresource{tp.bib}
 
@@ -18,20 +20,20 @@
 
 \begin{document}
 
-\title{Truncatable Primes}
+\title{Truncatable Primes - Statistics and Estimations}
 \author{TKoz}
 \date{\today}
 \maketitle
 
 \begin{abstract}
-here is some stupid text to take up an entire line before something actually gets written for this part so that the structure and layout of the latex document can be seen a bit better while experimenting with stuff
+Not written yet.
 \end{abstract}
 
 \section{Introduction}
 
 In number theory, truncatable primes are prime numbers such that some of their digits can be removed in succession, producing a sequence of primes until ending with, typically, a one digit prime. They can be defined for various number bases. In base 10, the number 2393 is a right truncatable prime because it is prime and we can remove a digit from the right one at a time to produce 239, 23, and 2, which are all prime. The number 1223 is a left truncatable prime because itself and 223, 23, and 3 are all prime.
 
-The prime number theorem can be used to come up with a way to estimate how many truncatable primes there are in a given base, leading to the conjecture that there are finitely many in all bases for each of the types considered here. This can be proven for a specific base by computing all of them, but it has not been proven to be true fol all bases.
+The prime number theorem can be used to come up with a way to estimate how many truncatable primes there are in a given base, leading to the conjecture that there are finitely many in all bases for each of the types considered here. This can be proven for a specific base by computing all of them, but it has not been proven to be true for all bases.
 
 \section{Definitions}
 
@@ -65,7 +67,85 @@ Certifying primality would be prohibitively expensive for larger trees. In pract
 
 \section{Algorithms}
 
-TODO prove the trees contain all primes only once (except for lor)
+\subsection{Computing the Tree}
+
+The recursive definitions of the truncatable prime types allows us to trace back to a 1 digit prime (or 2 digit for left-and-right truncatable). This is following a path up a tree toward its root. For the purpose of considering all truncatable primes of a particular type and base, we will let 0 be the root of the entire tree and have its child nodes be the base case primes. For example, in base 10, part of the right truncatable primes tree is:
+
+\begin{center}
+\begin{tikzpicture}
+[
+    level 2/.style = {sibling distance = 1cm}
+]
+\node {0} [sibling distance = 2.5cm, level distance = 1cm]
+    child {
+    node {2}
+        child {node {23}}
+        child {node {29}}
+    }
+    child {
+    node {3}
+        child {node {31}}
+        child {node {37}}
+    }
+    child {
+    node {5}
+        child {node {53}}
+        child {node {59}}
+    }
+    child {
+    node {7}
+        child {node {71}}
+        child {node {73}}
+        child {node {79}}
+    };
+\end{tikzpicture}
+\end{center}
+
+The tree can be explored using depth-first search which requires little memory since the tree height is expected to grow slowly. The recursion starts at a single digit prime and then tries every possible digit append to construct longer primes. The recursion is terminated at leaf nodes where it is not possible to append digits to construct a new prime. This method of searching exhaustively explores all possibilities.
+
+For all truncatable prime types except left-or-right truncatable, each prime on the tree will have a unique path to the root by following the recursive definition. However, a left-or-right truncatable prime may have multiple paths and appear in the tree multiple times. For example, in base 10, the paths $3\to13\to313$ and $3\to31\to313$ are both valid paths to 313. Using depth-first search, 313 would be counted twice. For left-or-right truncatable primes, it is more appropriate to use breadth-first search to avoid duplicates, however this also requires more memory to store all the primes on a layer of the tree using a set data structure that eliminates duplicates. This also complicates parallelizing because separate subtrees may contain the same prime.
+
+Finally, it is helpful to show that this method will actually find all the primes and nothing else. The base cases are small primes that satisfy the recursive definition of truncatable primes. Any further primes constructed recursively satisfy the definition because truncating the appended digits results in the smaller truncatable prime in its parent node. Conversely, for any prime satisfying the definition of a truncatable prime, we can construct a path of primes down to the base case. The recursive exploration of the tree will find this path in order of increasing digit length by exhaustively trying all possibilities. Therefore, ignoring duplicates for left-or-right truncatable primes, the set of numbers found recursively is the same as the set of all truncatable primes for any of the 4 types defined.
+
+\subsection{Tree Hashing}
+
+For the purpose of verifying computations, a hashing algorithm can be used. In order to allow computations to be split up and run in parallel, it makes sense to determine a hash for each node by combining its value with hashes of its children, using the root hash as the hash for the entire tree. A node in the tree with $k$ children may look like:
+
+\begin{center}
+\begin{tikzpicture}
+\node {$r$} [sibling distance = 2.5cm, level distance = 2cm]
+    child { node {$c_1$} edge from parent node [left] {$d_1$} }
+    child { node {$c_2$} edge from parent node [left] {$d_2$} }
+    child { node {$\ldots$} edge from parent [dashed] node {$\ldots$} }
+    child { node {$c_k$} edge from parent node [left] {$d_k$} };
+\end{tikzpicture}
+\end{center}
+
+Here, $r$ is the prime value in the node, $c_i$ are the child node hashes, and $d_i$ are the digit append values determined based on prime type and the digit(s) appended to create the child prime. The function $\text{irem}(n,d)$ is the remainder $r$ ($0\leq r<d$) of $n$ divided by $d$. The following algorithm is used to compute a 64 bit hash:
+
+\begin{algorithmic}[1]
+\Function{TreeNodeHash}{$r$,$d_i$,$c_i$}
+\State $h \gets \lfloor \text{irem}(r,2^{64}) / 2 \rfloor$ \Comment{lowest 64 bits of $r$ shifted right 1: $r>>1$}
+\For{$i=1$ to $k$}
+\State $h' \gets \text{irem}(127h-d_i,2^{64})$
+\State $h' \gets \text{irem}(8191h'+c_i,2^{64})$
+\State $h' \gets \text{irem}(2^{19}h'+\lfloor h'/2^{45}\rfloor,2^{64})$ \Comment{rotate left 19 bits: $(h' << 19) | (h' >> 45)$}
+\State $h \gets h \oplus h'$ \Comment{XOR with temporary value}
+\EndFor
+\State \Return $h$
+\EndFunction
+\end{algorithmic}
+
+This combines some fast operations to compute a hash with decently random distribution. The multipliers 127 and 8191 are Mersenne primes chosen so multiplication can be computed with a shift and add. The for loop takes the 2 values associated with a child node, and mixes them with $h$ to create a temporary variable $h'$ which is XORed with $h$ to update the hash value. At the end, $h$ is returned as the hash value after being updated by all child nodes.
+
+The following method is used to determine the $d_i$ values based on prime type where $b$ is the base:
+
+\begin{itemize}
+\item Right-truncatable: $d_i$ is the digit appended
+\item Left-truncatable: $d_i$ is the digit appended
+\item Left-and-right truncatable: $d_i=d_lb+d_r$ where $d_l$ is the left appended digit and $d_r$ is the right appended digit
+\item Left-or-right truncatable: $d_i=d$ when $d$ is appended left and $d_i=b+d$ when $d$ is appended right
+\end{itemize}
 
 \section{Estimation Formulas}
 
@@ -131,13 +211,17 @@ M_L + M_R - M_RP_R = M_L + M_R - MP(b,d+1)b \frac{M}{(b-1)^{d-1}\phi(b)}
 \end{equation}
 Both of these evaluate to the same value, which is what we should expect. Therefore, our estimate for counting the unique left-or-right truncatable primes is:
 \begin{equation}
-C_{L|R}(b,d+1) \approx C_{L|R}(b,d)P(b,d+1) \left( \frac{b(b-1)}{\phi(b)} + b - \frac{bC_{L|R}(b,d)}{(b-1)^d\phi(b)} \right)
+C_{L|R}(b,d+1) \approx C_{L|R}(b,d)P(b,d+1) \left( \frac{b(b-1)}{\phi(b)} + b - \frac{bC_{L|R}(b,d)}{(b-1)^{d-1}\phi(b)} \right)
 \end{equation}
 Unlike the other estimates, this one involves a square ($C_{L|R}(b,d)^2$). This makes it challenging to find a closed form formula for summation to estimate the total number of left-or-right truncatable primes.
 
 \subsection{Summing Subsequent Layers}
 
-Suppose we compute truncatable primes for base $b$ up to $d$ digits in length. We can use the number of $d$ digit primes as a starting point with the estimations from the previous section to predict how many truncatable primes we will get by summing terms. For right truncatable and left truncatable primes, we can obtain a formula by comparing the summation to the Taylor expansion of $e^x$. For right truncatable primes, we have the summation:
+Suppose we compute truncatable primes for base $b$ up to $d$ digits in length. We can use the number of $d$ digit primes as a starting point with the estimations from the previous section to predict how many truncatable primes we will get by summing terms.
+
+\subsubsection{Right and Left Truncatable}
+
+For right truncatable and left truncatable primes, we can obtain a formula by comparing the summation to the Taylor expansion of $e^x$. For right truncatable primes, we have the summation:
 \begin{equation}
 C_R(b,d+1) + C_R(b,d+2) + \ldots = C_R(b,d)P(b,d+1)b + C_R(b,d)P(b,d+1)P(b,d+2)b^2 + \ldots
 \end{equation}
@@ -162,9 +246,22 @@ We expect $d$ to be small to use this estimate so this is essentially a closed f
 C_R(b,2)S_R(b,2) = C_R(b,d) \frac{2\ln(b)^2}{b^2} \left[ e^{b/\ln(b)} - 1 - \frac{b}{\ln(b)} - \frac{b^2}{2\ln(b)^2} \right]
 \end{equation}
 
-For left-and-right truncatable primes, we can create a similar formula by comparing to the Tayler series of $e$ when $d$ is even. When $d$ is odd, finding a formula is difficult.
+\subsubsection{Left-And-Right Truncatable}
 
-TODO
+For left-and-right truncatable primes, we can create a similar formula by comparing to the Tayler series of $e$ when $d$ is even. When $d$ is odd, finding a formula is difficult. The summation is:
+\begin{equation}
+C_{L\&R}(b,d+2) \left[ \frac{b(b-1)}{(d+2)\ln(b)} + \frac{b^2(b-1)^2}{(d+2)(d+4)\ln(b)^2} + \frac{b^3(b-1)^3}{(d+2)(d+4)(d+6)\ln(b)^3} + \ldots \right]
+\end{equation}
+When $d$ is even, we can use the identity $2\cdot4\cdot\ldots\cdot2n=2^n(n!)$ to write the summation in brackets as:
+\begin{equation}
+S_{L\&R}(b,d) = \sum_{i=1}^\infty \left( \frac{b(b-1)}{\ln(b)} \right)^i \frac{2^{d/2}(d/2)!}{2^{d/2+i}(d/2+i)!} = (d/2)! \sum_{i=1}^\infty \left( \frac{b(b-1)}{2\ln(b)} \right)^i \frac{1}{(d/2+i)!}
+\end{equation}
+Letting $x=b(b-1)/[2\ln(b)]$, we have:
+\begin{equation}
+S_{L\&R}(b,d) = (d/2)! \sum_{n=d/2+1}^\infty \frac{x^{n-d/2}}{n!} = \frac{(d/2)!}{x^{d/2}} \sum_{n=d/2+1}^\infty \frac{x^n}{n!} = \frac{(d/2)!}{x^{d/2}} \left[ e^x - \sum_{n=0}^{d/2} \frac{x^n}{n!} \right]
+\end{equation}
+
+\subsubsection{Left-Or-Right Truncatable}
 
 For left-or-right truncatable primes, we have a complex estimate for handling duplicates so it is also difficult to find a formula. If the duplicates are included, then we end up with a formula like those for right and left truncatable primes, but we make the substitution
 \begin{equation}
@@ -176,8 +273,6 @@ The factorial function grows faster than an exponential function so the terms of
 \section{Results}
 
 \section{Further Work}
-
-Come up with a way to estimate $C_{L|R}$ without duplicates
 
 \cite{PARI2} \cite{OEIS}
 
